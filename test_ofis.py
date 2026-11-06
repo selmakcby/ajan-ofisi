@@ -118,6 +118,37 @@ def test_rapor_derle():
     assert sorular.rapor_derle() == (None, [])
 
 
+# ---------- Task 4: sunucu triyaj ve ofis durumu ----------
+
+def test_triyaj_guvenli_taraf():
+    import sunucu
+    eski = sunucu.claude_json
+    try:
+        def bozuk(*a, **k):
+            raise ValueError("bozuk")
+        sunucu.claude_json = bozuk
+        assert sunucu.ceo_triyaj("yazar", "S", "O")["karar"] == "kullaniciya"
+        sunucu.claude_json = lambda *a, **k: {"veri": {"karar": "belki"}, "ham": {}}
+        assert sunucu.ceo_triyaj("yazar", "S", "O")["karar"] == "kullaniciya"
+        tamam = {"karar": "kendim", "cevap": "evet", "gerekce": "küçük", "kullaniciya_not": ""}
+        sunucu.claude_json = lambda *a, **k: {"veri": tamam, "ham": {}}
+        assert sunucu.ceo_triyaj("yazar", "S", "O") == tamam
+    finally:
+        sunucu.claude_json = eski
+
+
+def test_ofis_durumu_sinir():
+    import sunucu
+    tablo = {f"a{i}": {"id": f"a{i}", "ad": "A", "oda": "genel", "kurulu": True} for i in range(200)}
+    assert len(sunucu.ofis_durumu_metni(tablo)) <= 3000
+
+
+def test_canli_durum_cevap_bekliyor():
+    import sunucu
+    ortak.durum_yaz("yazar", {"durum": "cevap_bekliyor", "bitis_ts": 0, "soru": "S"})
+    assert sunucu.canli_durum("yazar")[0] == "cevap_bekliyor"
+
+
 # ---------- koşucu ----------
 
 def main():
