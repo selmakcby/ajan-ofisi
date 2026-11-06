@@ -838,6 +838,57 @@ def test_yasakli_araclar_her_zaman():
     assert len(ortak.yasakli_araclar({"varsayilan_yasak_araclar": ortak.VARSAYILAN_YASAK})) == 7
 
 
+# ---------- Kurulum T3: şablonlar ----------
+
+def test_sablonlar_gecerli():
+    import ajan_yonetimi as ay
+    liste = ay.sablon_listesi()
+    assert {s["id"] for s in liste} == {"yazilim", "influencer", "dijital-pazarlama", "e-ticaret", "on-buro",
+                                        "egitim", "danismanlik"}
+    assert [s["ad"] for s in liste] == sorted(s["ad"] for s in liste)
+    for s in liste:
+        ham = json.load(open(os.path.join(ay.SABLON_DIZINI, s["id"] + ".json"), encoding="utf-8"))
+        assert 4 <= len(ham["ajanlar"]) <= 7 and 2 <= len(ham["odalar"]) <= 4, s["id"]
+        odalar = {o["id"] for o in ham["odalar"]}
+        assert all(o.get("tema") in ay.TEMALAR and ortak.ODA_ID_DESENI.fullmatch(o["id"]) for o in ham["odalar"])
+        for a in ham["ajanlar"]:
+            assert a["oda"] in odalar and a["model"] in ay.MODELLER, (s["id"], a["id"])
+            assert set(a["yetkiler"]) <= set(ay.YETKILER) and "okuma" in a["yetkiler"], (s["id"], a["id"])
+            assert 2 <= len(a["hazir_gorevler"]) <= 3 and ortak.AJAN_ID_DESENI.match(a["id"]) and "cwd" not in a
+            assert a["ad"] and a["aciklama"] and all(g["etiket"] and g["prompt"] for g in a["hazir_gorevler"])
+        assert {"id", "ad", "oda", "aciklama"} == set(s["ajanlar"][0])  # liste prompt taşımaz
+
+
+def test_sablondan_ekle_tekrarsiz(tmp):
+    import ajan_yonetimi as ay
+    _ajanlar(tmp)
+    ilk = ay.sablondan_ekle("yazilim")
+    assert ilk["eklenen"] and not ilk["atlanan"]
+    ikinci = ay.sablondan_ekle("yazilim")
+    assert not ikinci["eklenen"] and sorted(ikinci["atlanan"]) == sorted(ilk["eklenen"])
+    veri, tablo = ortak.ajanlari_yukle()
+    assert all(tablo[i]["kurulu"] for i in ilk["eklenen"])
+    assert len([o for o in veri["odalar"]]) == len({o["id"] for o in veri["odalar"]})  # oda tekrarı yok
+    assert all(tablo[i]["izinli_araclar"] for i in ilk["eklenen"])
+
+
+def test_sablondan_secili_ajanlar(tmp):
+    import ajan_yonetimi as ay
+    _ajanlar(tmp)
+    sablon = next(s for s in ay.sablon_listesi() if s["id"] == "influencer")
+    hepsi = [a["id"] for a in sablon["ajanlar"]]
+    sonuc = ay.sablondan_ekle("influencer", hepsi[:1])
+    assert sonuc == {"eklenen": hepsi[:1], "atlanan": []}
+    oda = sablon["ajanlar"][0]["oda"]
+    assert [o["id"] for o in ay.oku()["odalar"]] == [oda]  # yalnız seçili ajanın odası
+    for kotu in (lambda: ay.sablondan_ekle("olmayan"), lambda: ay.sablondan_ekle("../ortak")):
+        try:
+            kotu()
+            raise AssertionError
+        except ValueError:
+            pass
+
+
 # ---------- koşucu ----------
 
 def main():

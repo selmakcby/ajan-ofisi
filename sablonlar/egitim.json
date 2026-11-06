@@ -1,0 +1,131 @@
+{
+  "ad": "Eğitim / online kurs",
+  "aciklama": "Müfredat, ders içeriği, quiz ve öğrenci desteğiyle bir online kurs ekibi.",
+  "odalar": [
+    {
+      "id": "mufredat",
+      "ad": "Müfredat",
+      "tema": "arastirma",
+      "aciklama": "Kurs yapısı ve kazanımlar."
+    },
+    {
+      "id": "icerik-atolyesi",
+      "ad": "İçerik Atölyesi",
+      "tema": "atolye",
+      "aciklama": "Ders ve sınav içerikleri."
+    },
+    {
+      "id": "ogrenci-destek",
+      "ad": "Öğrenci Destek",
+      "tema": "posta",
+      "aciklama": "Öğrenci soruları ve tanıtım."
+    }
+  ],
+  "ajanlar": [
+    {
+      "id": "mufredat-tasarimcisi",
+      "ad": "Müfredat Tasarımcısı",
+      "oda": "mufredat",
+      "aciklama": "Kurs yapısını ve öğrenme hedeflerini çıkarır.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "web"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Kurs planı",
+          "prompt": "Konu için seviyelere ayrılmış modül ve ders planı, her derste öğrenme hedefleriyle hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Ön koşullar",
+          "prompt": "Kursa başlamadan bilinmesi gerekenleri ve kaynak önerilerini listele. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "ders-icerik-yazari",
+      "ad": "Ders İçerik Yazarı",
+      "oda": "icerik-atolyesi",
+      "aciklama": "Ders anlatımı ve örnekler yazar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Ders metni",
+          "prompt": "Seçilen ders için örnekli, adım adım bir anlatım metni yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Ders özeti",
+          "prompt": "Ders metninden bir sayfalık özet ve hatırlatma kartları çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "quiz-hazirlayici",
+      "ad": "Quiz Hazırlayıcı",
+      "oda": "icerik-atolyesi",
+      "aciklama": "Soru ve cevap anahtarı hazırlar.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Quiz",
+          "prompt": "Ders içeriğinden 10 çoktan seçmeli soru ve açıklamalı cevap anahtarı hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Ödev",
+          "prompt": "Ders için uygulamalı bir ödev ve değerlendirme ölçütü yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "ogrenci-soru-asistani",
+      "ad": "Öğrenci Soru Asistanı",
+      "oda": "ogrenci-destek",
+      "aciklama": "Öğrenci sorularına cevap taslağı yazar.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Soru cevapla",
+          "prompt": "Bekleyen öğrenci sorularını ders içeriğine dayanarak cevaplayan taslaklar yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "SSS güncelle",
+          "prompt": "Tekrarlayan öğrenci sorularından kurs SSS'sini güncelle. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "kurs-tanitim-yazari",
+      "ad": "Kurs Tanıtım Yazarı",
+      "oda": "ogrenci-destek",
+      "aciklama": "Kurs tanıtım ve duyuru metinleri yazar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Kurs sayfası",
+          "prompt": "Kurs için kazanım odaklı bir tanıtım sayfası metni yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Duyuru",
+          "prompt": "Yeni modül için öğrencilere gidecek duyuru taslağı yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    }
+  ]
+}

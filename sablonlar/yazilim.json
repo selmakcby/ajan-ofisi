@@ -1,0 +1,154 @@
+{
+  "ad": "Yazılım ekibi",
+  "aciklama": "Ürün planından koda, testten dokümantasyona küçük bir yazılım ekibi.",
+  "odalar": [
+    {
+      "id": "urun",
+      "ad": "Ürün",
+      "tema": "arastirma",
+      "aciklama": "Gereksinimler ve yol haritası."
+    },
+    {
+      "id": "kod",
+      "ad": "Kod",
+      "tema": "kod",
+      "aciklama": "Geliştirme."
+    },
+    {
+      "id": "kalite",
+      "ad": "Kalite",
+      "tema": "bakim",
+      "aciklama": "Test ve kod inceleme."
+    }
+  ],
+  "ajanlar": [
+    {
+      "id": "urun-yoneticisi",
+      "ad": "Ürün Yöneticisi",
+      "oda": "urun",
+      "aciklama": "İstekleri kullanıcı hikâyesine ve iş listesine çevirir.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Kullanıcı hikâyeleri",
+          "prompt": "Klasördeki notları ve README'yi oku; yapılacak işleri kabul kriterli kullanıcı hikâyelerine çevir. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Öncelik listesi",
+          "prompt": "Açık işleri etki ve efora göre sırala; ilk üç işi gerekçesiyle öner. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "backend-gelistirici",
+      "ad": "Backend Geliştirici",
+      "oda": "kod",
+      "aciklama": "Sunucu tarafı kodu yazar ve düzeltir.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma",
+        "komut"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Hata düzelt",
+          "prompt": "Son değişikliklere ve hata kayıtlarına bak; en olası hatanın kök nedenini bul, küçük bir düzeltme öner. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Uç nokta taslağı",
+          "prompt": "İstenen API uç noktası için veri modeli, istek/yanıt örnekleri ve doğrulama kurallarını çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "frontend-gelistirici",
+      "ad": "Frontend Geliştirici",
+      "oda": "kod",
+      "aciklama": "Arayüz bileşenlerini yazar, erişilebilirliği gözetir.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma",
+        "komut"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Bileşen taslağı",
+          "prompt": "İstenen ekran için bileşen ağacını, durumları ve boş/hata hâllerini çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Erişilebilirlik kontrolü",
+          "prompt": "Arayüz dosyalarını oku; etiket, kontrast ve klavye erişimi sorunlarını listele. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "test-muhendisi",
+      "ad": "Test Mühendisi",
+      "oda": "kalite",
+      "aciklama": "Test senaryosu yazar, testleri çalıştırır.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma",
+        "komut"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Test senaryoları",
+          "prompt": "Değişen modül için sınır durumlarını kapsayan test senaryolarını listele. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Testleri çalıştır",
+          "prompt": "Projenin test komutunu bul ve çalıştır; başarısız olanları nedeniyle özetle. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "kod-inceleyici",
+      "ad": "Kod İnceleyici",
+      "oda": "kalite",
+      "aciklama": "Değişiklikleri okur, risk listesi çıkarır; dosyaya yazmaz.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "komut"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Son değişiklikleri incele",
+          "prompt": "git diff ve git log ile son değişikliklere bak; hata riski, güvenlik ve okunabilirlik notlarını sırala. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Güvenlik taraması",
+          "prompt": "Kodda sır, doğrulanmayan girdi ve yetki açığı arayan kısa bir inceleme yap. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "dokumantasyon-yazari",
+      "ad": "Dokümantasyon Yazarı",
+      "oda": "urun",
+      "aciklama": "README ve kullanım kılavuzlarını günceller.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "README güncelle",
+          "prompt": "Koda bakarak README'deki eksik ya da eskimiş kurulum ve kullanım adımlarını düzelt. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Sürüm notu",
+          "prompt": "Son değişikliklerden kullanıcıya dönük kısa bir sürüm notu yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    }
+  ]
+}

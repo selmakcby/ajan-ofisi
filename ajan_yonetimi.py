@@ -244,3 +244,56 @@ def ajan_ayrinti(ajan_id):
     a = dict(_bul(oku(), ajan_id))
     a["yetkiler"] = _yetkiler(a.get("izinli_araclar"))
     return a
+
+
+# ---------- sektör şablonları ----------
+SABLON_DIZINI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sablonlar")
+
+
+def _sablonlar():
+    sonuc = {}
+    for ad in sorted(os.listdir(SABLON_DIZINI)):
+        if ad.endswith(".json"):
+            with open(os.path.join(SABLON_DIZINI, ad), encoding="utf-8") as f:
+                sonuc[ad[:-5]] = json.load(f)
+    return sonuc
+
+
+def sablon_listesi():
+    liste = [{"id": i, "ad": s["ad"], "aciklama": s["aciklama"], "odalar": s["odalar"],
+              "ajanlar": [{k: a[k] for k in ("id", "ad", "oda", "aciklama")} for a in s["ajanlar"]]}
+             for i, s in _sablonlar().items()]
+    return sorted(liste, key=lambda s: s["ad"])
+
+
+def sablondan_ekle(sablon_id, ajan_idleri=None):
+    """Şablonun (seçili) ajanlarını ve yalnız onların odalarını ekler; var olan ajan id'si atlanır."""
+    sablon = _sablonlar().get(sablon_id)  # yalnız listedeki adlar: yol enjeksiyonu yok
+    if not sablon:
+        raise ValueError("Böyle bir şablon yok.")
+    secili = [a for a in sablon["ajanlar"] if ajan_idleri is None or a["id"] in ajan_idleri]
+    with KILIT:
+        veri = oku()
+        var_olan = {a.get("id") for a in veri["ajanlar"]}
+        eklenen, atlanan, klasorler = [], [], []
+        for s in secili:
+            if s["id"] in var_olan:
+                atlanan.append(s["id"])
+                continue
+            if s["oda"] not in _oda_idleri(veri):  # var olan oda id'si yeniden kullanılır
+                oda = next(o for o in sablon["odalar"] if o["id"] == s["oda"])
+                veri.setdefault("odalar", []).append({k: oda[k] for k in ("id", "ad", "tema", "aciklama") if k in oda})
+            cwd = f"{CALISMA}/{s['id']}"
+            veri["ajanlar"].append({
+                "id": s["id"], "ad": s["ad"], "oda": s["oda"], "cwd": cwd, "model": s["model"],
+                "ne_zaman": "istek", "ne_zaman_metin": "İstek gelince", "aciklama": s["aciklama"],
+                "izinli_araclar": [a for k in YETKILER if k in s["yetkiler"] for a in YETKILER[k]],
+                "hazir_gorevler": [dict(g) for g in s["hazir_gorevler"]],
+            })
+            eklenen.append(s["id"])
+            klasorler.append(ortak.cwd_coz(cwd))
+        if eklenen:
+            kaydet(veri)
+        for k in klasorler:
+            os.makedirs(k, exist_ok=True)
+    return {"eklenen": eklenen, "atlanan": atlanan}

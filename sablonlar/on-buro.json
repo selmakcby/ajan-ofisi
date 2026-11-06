@@ -1,0 +1,129 @@
+{
+  "ad": "Küçük işletme ön büro",
+  "aciklama": "Fatura ve gider özeti, teklif ve yazışma taslaklarıyla küçük bir işletmenin ön bürosu.",
+  "odalar": [
+    {
+      "id": "muhasebe",
+      "ad": "Muhasebe",
+      "tema": "veri",
+      "aciklama": "Fatura ve giderler."
+    },
+    {
+      "id": "yazisma",
+      "ad": "Yazışma",
+      "tema": "posta",
+      "aciklama": "Teklif ve yazışmalar."
+    },
+    {
+      "id": "ofis-yonetimi",
+      "ad": "Ofis Yönetimi",
+      "tema": "gun-sonu",
+      "aciklama": "Toplantı ve gün sonu."
+    }
+  ],
+  "ajanlar": [
+    {
+      "id": "fatura-gider-ozetleyici",
+      "ad": "Fatura ve Gider Özetleyici",
+      "oda": "muhasebe",
+      "aciklama": "Fatura ve gider dökümünü özetler.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Aylık özet",
+          "prompt": "Klasördeki fatura ve gider dosyalarından kategori bazlı aylık özet çıkar; kaynaksız sayı yazma. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Vadesi gelenler",
+          "prompt": "Ödeme vadesi yaklaşan faturaları listele; ödeme kararı ve işlemi kullanıcının. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "teklif-hazirlayici",
+      "ad": "Teklif Hazırlayıcı",
+      "oda": "yazisma",
+      "aciklama": "Müşteri teklif metinlerini hazırlar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Teklif taslağı",
+          "prompt": "Müşteri talebine göre kapsam, süre ve koşulları içeren bir teklif taslağı yaz; fiyatı boş bırak. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Teklif takibi",
+          "prompt": "Cevap bekleyen teklifler için nazik takip mesajı taslakları yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "yazisma-asistani",
+      "ad": "Yazışma Asistanı",
+      "oda": "yazisma",
+      "aciklama": "Resmî ve günlük yazışma taslakları yazar.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Cevap taslağı",
+          "prompt": "Klasördeki gelen yazışmalara uygun tonda cevap taslakları hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Resmî yazı",
+          "prompt": "İstenen konuda resmî bir dilekçe/yazı taslağı hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "toplanti-notu-asistani",
+      "ad": "Toplantı Notu Asistanı",
+      "oda": "ofis-yonetimi",
+      "aciklama": "Toplantı notlarını düzenler.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Toplantı özeti",
+          "prompt": "Ham toplantı notlarından karar ve aksiyon listesi çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Gündem",
+          "prompt": "Gelecek toplantı için açık maddelerden bir gündem taslağı hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "gun-sonu-raporcu",
+      "ad": "Gün Sonu Raporcu",
+      "oda": "ofis-yonetimi",
+      "aciklama": "Günün işlerinden kısa rapor çıkarır.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Gün sonu raporu",
+          "prompt": "Bugünkü notlardan ve çıktılardan yapılanlar, bekleyenler ve yarın için öneriler raporu yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Haftalık özet",
+          "prompt": "Bu haftanın gün sonu raporlarından tek sayfalık bir özet çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    }
+  ]
+}
