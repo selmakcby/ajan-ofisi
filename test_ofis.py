@@ -288,14 +288,19 @@ def _mesaj(metin, gonderen=42, yanit=None, uid=1):
     return {"update_id": uid, "message": m}
 
 
-def _bot(tmp, kullanici=42, mesgul=False, api=None):
+def _ajanlar(tmp):
+    """tmp altında yazar + ceo'lu küçük bir ajanlar.json kurar (koşucu testten sonra yolu geri alır)."""
     import json as _json
-    import telegram_kopru as telegram
     yol = os.path.join(tmp, "ajanlar.json")
     os.makedirs(os.path.join(tmp, "yazar"), exist_ok=True)
     _json.dump({"ajanlar": [{"id": "yazar", "ad": "Yazar", "cwd": os.path.join(tmp, "yazar")},
                             {"id": "ceo", "ad": "CEO", "cwd": tmp}]}, open(yol, "w", encoding="utf-8"))
     ortak.AJANLAR_DOSYASI = yol
+
+
+def _bot(tmp, kullanici=42, mesgul=False, api=None):
+    import telegram_kopru as telegram
+    _ajanlar(tmp)
     cagrilar = []
 
     def gorev_baslat(ajan, **k):
@@ -430,6 +435,113 @@ def test_bildir_soru_mesaj_eslemesi(tmp):
     assert sorular.mesaj_hedefi(mid)["soru_id"] == "k1" and sorular.soru_al("k1")["telegram_mesaj_id"] == mid
 
 
+# ---------- Task 7: Telegram paneli ----------
+
+GECERLI_TOKEN = "123456:ABCdefGHIjklMNOpqrSTUvwxYZ0123456789"
+
+
+def _yonetici(tmp, getme_ok=True):
+    import time as _time
+    import telegram_kopru
+
+    class PanelApi(SahteApi):
+        def __init__(self, token):
+            super().__init__()
+            self.token = token
+
+        def guncellemeler(self, ofset):
+            _time.sleep(0.05)  # arka plan döngüsü testte CPU yakmasın
+            return []
+
+        def cagir(self, metod, **p):
+            if metod == "getMe":
+                if not getme_ok:
+                    raise telegram_kopru.TelegramHatasi("Unauthorized", 401)
+                return {"username": "ajanofisi_bot"}
+            if metod == "getChat":
+                return {"first_name": "Ramazan"}
+            return {}
+
+    return telegram_kopru.Yonetici(lambda *a, **k: None, lambda *a, **k: None,
+                                   env_yolu=os.path.join(tmp, ".env"), api_sinifi=PanelApi)
+
+
+def test_panel_token_dogrulama(tmp):
+    env = os.path.join(tmp, ".env")
+    y = _yonetici(tmp, getme_ok=False)
+    for bozuk in ("", "abc", "123:kisa"):
+        try:
+            y.islem({"islem": "token", "token": bozuk})
+            raise AssertionError("bozuk token kabul edildi")
+        except ValueError:
+            pass
+    try:
+        y.islem({"islem": "token", "token": GECERLI_TOKEN})
+        raise AssertionError("getMe hatasında token kaydedildi")
+    except ValueError:
+        pass
+    assert ortak.env_oku(env) == {}
+    y = _yonetici(tmp)
+    try:
+        d = y.islem({"islem": "token", "token": GECERLI_TOKEN})
+        assert ortak.env_oku(env)["OFIS_TELEGRAM_TOKEN"] == GECERLI_TOKEN
+        assert d["durum"] == "eslesme_bekliyor" and d["bot"] == "@ajanofisi_bot"
+        assert len(d["kod"]) == 6 and 0 < d["kod_kalan_sn"] <= 600
+    finally:
+        y.durdur()
+
+
+def test_panel_durum_token_sizdirmaz(tmp):
+    import json as _json
+    y = _yonetici(tmp)
+    try:
+        d = y.islem({"islem": "token", "token": GECERLI_TOKEN})
+        assert GECERLI_TOKEN not in _json.dumps(d) and GECERLI_TOKEN.split(":")[1] not in _json.dumps(d)
+        assert d["token_son4"] == GECERLI_TOKEN[-4:]
+    finally:
+        y.durdur()
+
+
+def test_panel_rapor_saati(tmp):
+    y = _yonetici(tmp)
+    for bozuk in ("25:00", "7:3", "abc"):
+        try:
+            y.islem({"islem": "rapor_saati", "rapor_saati": bozuk})
+            raise AssertionError(f"{bozuk} kabul edildi")
+        except ValueError:
+            pass
+    y.islem({"islem": "rapor_saati", "rapor_saati": "07:30"})
+    assert ortak.env_oku(os.path.join(tmp, ".env"))["OFIS_TELEGRAM_RAPOR_SAATI"] == "07:30"
+
+
+def test_panel_kaldir_ve_kapali(tmp):
+    y = _yonetici(tmp)
+    assert y.durum()["durum"] == "kapali"
+    y.islem({"islem": "token", "token": GECERLI_TOKEN})
+    d = y.islem({"islem": "kaldir"})
+    assert d["durum"] == "kapali" and y.bot is None
+    assert not any(k.startswith("OFIS_TELEGRAM_") for k in ortak.env_oku(os.path.join(tmp, ".env")))
+    for islem in ("kod", "test"):
+        try:
+            y.islem({"islem": islem})
+            raise AssertionError(f"{islem} bot yokken kabul edildi")
+        except ValueError:
+            pass
+
+
+def test_panel_eslesince_bagli(tmp):
+    y = _yonetici(tmp)
+    try:
+        d = y.islem({"islem": "token", "token": GECERLI_TOKEN})
+        _ajanlar(tmp)
+        y.bot.isle(_mesaj(f"/baslat {d['kod']}", gonderen=42))
+        d = y.durum()
+        assert d["durum"] == "bagli" and d["kullanici_adi"] == "Ramazan" and d["kod"] is None
+        assert y.islem({"islem": "test"})["durum"] == "bagli"
+    finally:
+        y.durdur()
+
+
 # ---------- koşucu ----------
 
 def main():
@@ -438,7 +550,7 @@ def main():
     testler = [(ad, f) for ad, f in globals().items() if ad.startswith("test_") and callable(f)]
     if len(sys.argv) > 1:
         testler = [(ad, f) for ad, f in testler if any(s in ad for s in sys.argv[1:])]
-    asil_durum = ortak.DURUM_DIZINI
+    asil_durum, asil_ajanlar = ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI
     hatali = 0
     for ad, f in testler:
         tmp = tempfile.mkdtemp(prefix="ofis-test-")
@@ -452,7 +564,7 @@ def main():
             print(f"  ✗ {ad}")
             traceback.print_exc()
         finally:
-            ortak.DURUM_DIZINI = asil_durum
+            ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI = asil_durum, asil_ajanlar
             shutil.rmtree(tmp, ignore_errors=True)
     print(f"{len(testler) - hatali}/{len(testler)}")
     if hatali:

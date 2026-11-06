@@ -460,6 +460,8 @@ class Isleyici(SimpleHTTPRequestHandler):
             return self._json(200, token_sayac.api_yaniti())
         if yol.path == "/api/hafiza":
             return self._json(200, hafiza_yaniti())
+        if yol.path == "/api/telegram":
+            return self._json(200, TELEGRAM.durum())
         if yol.path == "/api/terminaller":
             return self._json(200, {"terminaller": KOPRU.liste()})
         if yol.path == "/api/olaylar":
@@ -483,6 +485,11 @@ class Isleyici(SimpleHTTPRequestHandler):
                         (prompt is not None and not isinstance(prompt, str)):
                     raise IstekHatasi(400, "etiket/prompt metin olmalı")
                 return self._json(202, gorev_baslat(ajan, etiket=etiket, prompt=prompt))
+            if yol == "/api/telegram":
+                try:
+                    return self._json(200, TELEGRAM.islem(veri))
+                except ValueError as e:
+                    raise IstekHatasi(400, str(e)) from e
             if yol == "/api/ceo":
                 metin = veri.get("metin")
                 if not isinstance(metin, str) or not metin.strip():

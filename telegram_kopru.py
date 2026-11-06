@@ -26,6 +26,8 @@ MAKS_BEKLEME = 300
 AJAN_DESENI = re.compile(r"^@([a-z0-9-]{1,40})\s+(.+)$", re.S)
 RAPOR_MADDE = re.compile(r"^\s*(\d+)\s+(.+)$", re.S)
 ESLESTIR = re.compile(r"^/baslat\s+(\d{6})$")
+TOKEN_DESENI = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
+PANEL_SAAT = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
 class TelegramHatasi(Exception):
@@ -131,6 +133,7 @@ class Bot:
         self.kullanici_adi = None
         self.bekleme = 0
         self.son_hata = None
+        self.son_hata_kod = None
         self._loglanan = None
         self.ofset = self._ofset_oku()
 
@@ -265,6 +268,7 @@ class Bot:
 
     def _hata_kaydet(self, e):
         self.son_hata = str(e)[:200]
+        self.son_hata_kod = getattr(e, "kod", None)
         if type(e).__name__ + self.son_hata != self._loglanan:  # aynı hata logu boğmasın
             self._loglanan = type(e).__name__ + self.son_hata
             sys.stderr.write(f"telegram: {type(e).__name__}: {self.son_hata}\n")
@@ -279,7 +283,7 @@ class Bot:
                     self.isle(g)
                 except Exception as e:  # noqa: BLE001
                     sys.stderr.write(f"telegram: mesaj işlenemedi ({type(e).__name__}: {e})\n")
-            self.bekleme, self.son_hata, self._loglanan = 0, None, None
+            self.bekleme, self.son_hata, self.son_hata_kod, self._loglanan = 0, None, None, None
         except Exception as e:  # noqa: BLE001 — ağ yok, token geçersiz…: geri çekil
             self._hata_kaydet(e)
             self.bekleme = min(max(5, self.bekleme * 2), MAKS_BEKLEME)
@@ -350,3 +354,86 @@ class Yonetici:
     def bildir(self, metin, hedef=None):
         bot = self.bot
         return bot.bildir(metin, hedef) if bot else None
+
+    # ---------- web paneli ----------
+
+    def _ortamdan(self):
+        return bool(os.environ.get("OFIS_TELEGRAM_TOKEN"))
+
+    def durum(self):
+        """Panel için durum. Token ASLA dönmez (yalnız son 4 karakter)."""
+        ayar = ortak.telegram_ayari(self.env_yolu)
+        bot = self.bot
+        d = {"durum": "kapali", "bot": None, "token_son4": None, "kullanici_adi": None,
+             "rapor_saati": "%02d:%02d" % (ayar["rapor_saati"] if ayar else (18, 0)),
+             "son_hata": None, "kod": None, "kod_kalan_sn": None, "ortamdan": self._ortamdan()}
+        if not ayar:
+            return d
+        d["token_son4"] = ayar["token"][-4:]
+        if not bot:
+            return {**d, "durum": "gecersiz", "son_hata": "bot başlatılamadı"}
+        if getattr(bot, "bot_adi", None) is None:
+            try:
+                bot.bot_adi = "@" + bot.api.cagir("getMe")["username"]
+            except Exception as e:  # noqa: BLE001
+                bot._hata_kaydet(e)
+        if bot.ayar.get("kullanici") and not bot.kullanici_adi:
+            try:
+                bot.kullanici_adi = bot.api.cagir("getChat", chat_id=bot.ayar["kullanici"]).get("first_name")
+            except Exception:  # noqa: BLE001
+                bot.kullanici_adi = str(bot.ayar["kullanici"])
+        kalan = int(bot.kod["bitis_ts"] - time.time()) if bot.kod else 0
+        if bot.son_hata_kod in (401, 404):
+            durum = "gecersiz"
+        else:
+            durum = "bagli" if bot.ayar.get("kullanici") else "eslesme_bekliyor"
+        return {**d, "durum": durum, "bot": getattr(bot, "bot_adi", None), "kullanici_adi": bot.kullanici_adi,
+                "son_hata": bot.son_hata, "kod": bot.kod["kod"] if kalan > 0 else None,
+                "kod_kalan_sn": kalan if kalan > 0 else None}
+
+    def islem(self, veri):
+        """Panel işlemi; hata → ValueError (kullanıcıya gösterilecek Türkçe mesaj). Sonuç: durum()."""
+        islem = veri.get("islem")
+        with self.kilit:
+            if islem == "token":
+                if self._ortamdan():
+                    raise ValueError("Token ortam değişkeninden geliyor, panelden değiştirilemez.")
+                token = str(veri.get("token") or "").strip()
+                if not TOKEN_DESENI.match(token):
+                    raise ValueError("Bu bir bot token'ına benzemiyor. BotFather'ın verdiği "
+                                     "'123456:ABC…' biçimindeki metni yapıştır.")
+                try:
+                    ben = self.api_sinifi(token).cagir("getMe")
+                except Exception as e:  # noqa: BLE001
+                    raise ValueError(f"Telegram bu token'ı kabul etmedi ({e}).") from None
+                ortak.env_yaz({"OFIS_TELEGRAM_TOKEN": token, "OFIS_TELEGRAM_KULLANICI": None}, self.env_yolu)
+                self.yeniden_baslat()
+                if self.bot:
+                    self.bot.bot_adi = "@" + (ben or {}).get("username", "")
+                    self.bot.kod_uret()
+            elif islem == "kod":
+                if not self.bot:
+                    raise ValueError("Önce bot token'ını gir.")
+                self.bot.kod_uret()
+            elif islem == "rapor_saati":
+                saat = str(veri.get("rapor_saati") or "")
+                e = PANEL_SAAT.match(saat)
+                if not e:
+                    raise ValueError("Saat SS:DD biçiminde olmalı (ör. 18:00).")
+                ortak.env_yaz({"OFIS_TELEGRAM_RAPOR_SAATI": saat}, self.env_yolu)
+                if self.bot:
+                    self.bot.ayar["rapor_saati"] = (int(e.group(1)), int(e.group(2)))
+            elif islem == "test":
+                if not self.bot or not self.bot.ayar.get("kullanici"):
+                    raise ValueError("Önce Telegram hesabını eşleştir.")
+                if self.bot.bildir("Ajan Ofisi test mesajı ✓") is None:
+                    raise ValueError(f"Mesaj gönderilemedi: {self.bot.son_hata}")
+            elif islem == "kaldir":
+                if self._ortamdan():
+                    raise ValueError("Token ortam değişkeninden geliyor, panelden kaldırılamaz.")
+                ortak.env_yaz({"OFIS_TELEGRAM_TOKEN": None, "OFIS_TELEGRAM_KULLANICI": None,
+                               "OFIS_TELEGRAM_RAPOR_SAATI": None}, self.env_yolu)
+                self.durdur()
+            else:
+                raise ValueError("bilinmeyen işlem")
+        return self.durum()

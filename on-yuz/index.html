@@ -113,6 +113,12 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 .panel .oda-etiket{font-size:12px;color:var(--soluk);font-weight:500}
 .panel h2{font-family:"Space Grotesk",sans-serif;font-size:24px;font-weight:600;letter-spacing:-.02em;margin:2px 0 10px}
 .panel h3{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--soluk);margin:14px 0 8px}
+.tg-rozet{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#eee6dc}
+.tg-bagli{background:#d9efdf;color:#2f6b3f}.tg-gecersiz{background:#fbe0d8;color:#a1402a}.tg-eslesme_bekliyor{background:#fff0c9;color:#7a5b10}
+.tg-not{font-size:13px;color:var(--soluk);margin:8px 0;line-height:1.45}.tg-hata{font-size:12px;color:#a1402a;margin:6px 0}
+.tg-form{display:flex;gap:8px;margin:6px 0}.tg-form input{flex:1;min-width:0;padding:8px 10px;border-radius:9px;border:1px solid rgba(59,52,44,.15);background:#fff;font:inherit;font-size:13px}
+.tg-kod{font-family:"Space Grotesk",sans-serif;font-size:34px;font-weight:600;letter-spacing:.2em;margin:6px 0;user-select:all}
+.tg-alt{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.tg-kaldir{color:#a1402a}
 .durum{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;padding:6px 10px;border-radius:999px;background:rgba(59,52,44,.07);color:#6d6357;max-width:100%}
 .durum.calisiyor{background:rgba(255,122,89,.14);color:var(--mercan-k)}
 .durum .nokta{width:7px;height:7px;background:currentColor;box-shadow:none;animation:none}
@@ -235,6 +241,7 @@ td.sayi,th.sayi{text-align:right}
   <div class="bosluk"></div>
   <div class="hap"><span class="nokta" id="aktifNokta"></span><b id="aktif">0</b> ajan çalışıyor</div>
   <span class="saat" id="saat"></span>
+  <button class="dugme" id="telegramDugme">Telegram</button>
   <button class="dugme" id="genel">Genel bakış</button>
 </header>
 
@@ -1804,6 +1811,74 @@ function gecisGuncelle(dt) {
 }
 $('genel').onclick = () => { SES.tik(); panelKapat(); sekmeAc('ofis'); kameraGit(GENEL.poz, GENEL.hedef); };
 $('genel').onmouseenter = () => SES.uzerinde();
+
+/* ---------- Telegram paneli: token, eşleştirme kodu, rapor saati, test, kaldır ---------- */
+let tgZaman = null;
+const TG_DURUM = { kapali:'Bağlı değil', gecersiz:'Token geçersiz', eslesme_bekliyor:'Eşleşme bekleniyor', bagli:'Bağlı' };
+async function telegramPaneli(mesaj) {
+  panelAjan = panelOda = null; odaVurgu(null); clearTimeout(tgZaman);
+  const kapat = el('button', 'kapat', '×'); kapat.onclick = () => { SES.tik(); clearTimeout(tgZaman); panelKapat(); };
+  const kutu = el('div', 'tg-panel');
+  panel.replaceChildren(kapat, el('div', 'oda-etiket', 'Bağlantı'), el('h2', null, 'Telegram'), kutu);
+  panel.classList.add('acik');
+  if (DEMO) { kutu.append(el('p', 'tg-not', 'Demo modunda Telegram kapalı.')); return; }
+  let d;
+  try { d = await getJSON('/api/telegram'); } catch { kutu.append(el('p', 'tg-not', 'Sunucuya ulaşılamadı.')); return; }
+  if (!panel.contains(kutu)) return; // bu arada başka bir panel açıldı
+  tgCiz(kutu, d, mesaj);
+  if (d.durum === 'eslesme_bekliyor' && d.kod) // eşleşme beklenirken 3 sn'de bir bak
+    tgZaman = setTimeout(() => { if (panel.contains(kutu) && panel.classList.contains('acik')) telegramPaneli(); }, 3000);
+}
+async function tgIslem(govde) {
+  const { durum, veri } = await postJSON('/api/telegram', govde).catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
+  if (durum !== 200) { tost(veri.hata || 'İşlem yapılamadı.'); telegramPaneli(); return; }
+  telegramPaneli(govde.islem === 'test' ? 'Test mesajı gönderildi; telefonuna bak.' : null);
+}
+function tgCiz(kutu, d, mesaj) {
+  kutu.append(el('div', 'tg-rozet tg-' + d.durum, TG_DURUM[d.durum] || d.durum));
+  if (mesaj) kutu.append(el('p', 'tg-not', mesaj));
+  if (d.son_hata && d.durum !== 'bagli') kutu.append(el('p', 'tg-hata', 'Son hata: ' + d.son_hata));
+  const satirlar = el('div', 'satirlar');
+  const satir = (k, v) => { const s = el('div', 'satir'); s.append(el('span', null, k), el('span', null, v || '—')); satirlar.append(s); };
+  if (d.bot) satir('Bot', d.bot);
+  if (d.token_son4) satir('Token', '…' + d.token_son4);
+  if (d.kullanici_adi) satir('Eşleşen hesap', d.kullanici_adi);
+  if (satirlar.children.length) kutu.append(satirlar);
+
+  if (d.ortamdan) kutu.append(el('p', 'tg-not', 'Token ortam değişkeninden geliyor; panelden değiştirilemez.'));
+  else {
+    kutu.append(el('h3', null, d.token_son4 ? 'Token değiştir' : '1. Bot token’ı'));
+    if (!d.token_son4) kutu.append(el('p', 'tg-not', 'Telegram’da @BotFather’a /newbot yaz, botunu oluştur ve verdiği token’ı buraya yapıştır.'));
+    const f = el('form', 'tg-form'); const inp = el('input'); inp.type = 'password'; inp.placeholder = '123456:ABC…'; inp.autocomplete = 'off';
+    const b = el('button', 'koyu', 'Kaydet'); b.type = 'submit'; f.append(inp, b);
+    f.onsubmit = e => { e.preventDefault(); const t = inp.value.trim(); inp.value = ''; if (t) { b.disabled = true; tgIslem({ islem:'token', token:t }); } };
+    kutu.append(f);
+  }
+  if (d.durum === 'eslesme_bekliyor' || d.durum === 'bagli') {
+    kutu.append(el('h3', null, d.durum === 'bagli' ? 'Başka hesapla eşleştir' : '2. Hesabını eşleştir'));
+    if (d.kod) {
+      kutu.append(el('div', 'tg-kod', d.kod));
+      kutu.append(el('p', 'tg-not', `Telegram’da botuna şunu yaz: /baslat ${d.kod}  (${Math.ceil(d.kod_kalan_sn / 60)} dk geçerli)`));
+    } else { const b = el('button', 'dugme', 'Eşleştirme kodu üret'); b.onclick = () => tgIslem({ islem:'kod' }); kutu.append(b); }
+  }
+  if (d.durum !== 'kapali') {
+    kutu.append(el('h3', null, 'Gün sonu raporu'));
+    kutu.append(el('p', 'tg-not', 'CEO’nun kendi verdiği kararlar bu saatte Telegram’a gelir.'));
+    const f = el('form', 'tg-form'); const inp = el('input'); inp.type = 'time'; inp.value = d.rapor_saati;
+    const b = el('button', 'dugme', 'Kaydet'); b.type = 'submit'; f.append(inp, b);
+    f.onsubmit = e => { e.preventDefault(); tgIslem({ islem:'rapor_saati', rapor_saati:inp.value }); };
+    kutu.append(f);
+    const alt = el('div', 'tg-alt');
+    if (d.durum === 'bagli') { const t = el('button', 'dugme', 'Test mesajı gönder'); t.onclick = () => tgIslem({ islem:'test' }); alt.append(t); }
+    if (!d.ortamdan) {
+      const k = el('button', 'dugme tg-kaldir', 'Bağlantıyı kaldır');
+      k.onclick = () => { if (confirm('Telegram bağlantısı kaldırılsın mı? Bot artık mesajlara cevap vermez.')) tgIslem({ islem:'kaldir' }); };
+      alt.append(k);
+    }
+    kutu.append(alt);
+  }
+}
+$('telegramDugme').onclick = () => { SES.tik(); telegramPaneli(); };
 
 /* ---------- kedi meme'leri (tıklanınca) ---------- */
 const meme = memeKur({ kameraGit, controls, iptal:a => odayaGit(odaBul(a.oda)) });
