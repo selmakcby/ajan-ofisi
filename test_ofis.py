@@ -683,6 +683,72 @@ def test_grup_sohbeti_yok_sayilir(tmp):  # bulgu 16
     assert c == [] and api.gonderilen == []
 
 
+# ---------- Kurulum T1: hesap.py ----------
+
+def test_hesap_olustur_dogrula():
+    import hesap
+    assert not hesap.hesap_var()
+    for ad, sifre in (("ab", "12345678"), ("ramazan", "kisa"), ("a b c", "12345678")):
+        try:
+            hesap.hesap_olustur(ad, sifre)
+            raise AssertionError((ad, sifre))
+        except ValueError:
+            pass
+    hesap.hesap_olustur("ramazan", "gizli-sifre-1")
+    assert hesap.hesap_var() and hesap.kullanici_adi() == "ramazan"
+    assert hesap.dogrula("ramazan", "gizli-sifre-1") and not hesap.dogrula("ramazan", "yanlis-sifre")
+    assert not hesap.dogrula("baskasi", "gizli-sifre-1")
+    assert "gizli-sifre-1" not in open(os.path.join(ortak.DURUM_DIZINI, "hesap.json"), encoding="utf-8").read()
+    try:
+        hesap.hesap_olustur("ikinci", "12345678")
+        raise AssertionError("ikinci hesap")
+    except ValueError:
+        pass
+
+
+def test_oturum_suresi_dolar():
+    import hesap
+    t = hesap.oturum_ac()
+    assert hesap.oturum_gecerli(t) and not hesap.oturum_gecerli("uydurma") and not hesap.oturum_gecerli(None)
+    assert t not in open(os.path.join(ortak.DURUM_DIZINI, "oturumlar.json"), encoding="utf-8").read()
+    eski, hesap.OTURUM_SN = hesap.OTURUM_SN, -1
+    try:
+        assert not hesap.oturum_gecerli(hesap.oturum_ac())
+    finally:
+        hesap.OTURUM_SN = eski
+    hesap.oturum_kapat(t)
+    assert not hesap.oturum_gecerli(t)
+
+
+def test_sifre_sifirla_oturumlari_siler():
+    import hesap
+    hesap.hesap_olustur("ramazan", "gizli-sifre-1")
+    t = hesap.oturum_ac()
+    hesap.sifre_sifirla("yeni-sifre-22")
+    assert not hesap.oturum_gecerli(t) and hesap.dogrula("ramazan", "yeni-sifre-22")
+    try:
+        hesap.sifre_sifirla("kisa")
+        raise AssertionError("kısa şifre")
+    except ValueError:
+        pass
+
+
+def test_kaba_kuvvet_beklemesi():
+    import hesap
+    hesap.giris_basarili()
+    for _ in range(5):
+        assert hesap.giris_bekleme() == 0
+        hesap.giris_hatasi()
+    assert hesap.giris_bekleme() == 0          # ilk 5 hata beklemesiz
+    hesap.giris_hatasi()                       # 6. hata → 2 sn bekleme
+    assert 1 <= hesap.giris_bekleme() <= 2
+    for _ in range(20):
+        hesap.giris_hatasi()
+    assert hesap.giris_bekleme() <= 300
+    hesap.giris_basarili()
+    assert hesap.giris_bekleme() == 0
+
+
 # ---------- koşucu ----------
 
 def main():
