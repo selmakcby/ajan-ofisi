@@ -832,10 +832,10 @@ def test_kaydet_yedek_tutar(tmp):
 
 
 def test_yasakli_araclar_her_zaman():
-    assert ortak.yasakli_araclar({"varsayilan_yasak_araclar": ["Bash(sudo:*)"]})[:7] == ortak.VARSAYILAN_YASAK
+    assert ortak.yasakli_araclar({"varsayilan_yasak_araclar": ["Bash(sudo:*)"]})[:len(ortak.VARSAYILAN_YASAK)] == ortak.VARSAYILAN_YASAK
     assert "Bash(sudo:*)" in ortak.yasakli_araclar({"varsayilan_yasak_araclar": ["Bash(sudo:*)"]})
     assert ortak.yasakli_araclar({}) == ortak.VARSAYILAN_YASAK
-    assert len(ortak.yasakli_araclar({"varsayilan_yasak_araclar": ortak.VARSAYILAN_YASAK})) == 7
+    assert len(ortak.yasakli_araclar({"varsayilan_yasak_araclar": ortak.VARSAYILAN_YASAK})) == len(ortak.VARSAYILAN_YASAK)
 
 
 # ---------- Kurulum T3: şablonlar ----------
@@ -1637,6 +1637,77 @@ def test_baglanti_dene_oserror(tmp):  # M8
 
 
 # ---------- koşucu ----------
+
+
+# ---------- Proje takip (T1) ----------
+
+def test_proje_ekle_dogrula(tmp):
+    import projeler
+    p = projeler.ekle("Web sitesi", "yenile", "yuksek", "2026-12-01")
+    assert p["id"].startswith("p-") and p["durum"] == "acik" and p["ilerleme"] == 0 and p["gorevler"] == []
+    assert os.path.exists(os.path.join(ortak.gizli_dizin(), "projeler.json"))
+    for kotu in [("",), ("x" * 121,), ("a", "", "acil"), ("a", "", "orta", "2026-13-40"), ("a", "x" * 4001)]:
+        try:
+            projeler.ekle(*kotu)
+            raise AssertionError(kotu)
+        except ValueError:
+            pass
+    assert projeler.ekle("b")["oncelik"] == "orta"
+
+
+def test_proje_yasam_dongusu(tmp):
+    import projeler
+    p = projeler.ekle("a")
+    projeler.onay_iste(p["id"], "her şey bitti")
+    assert projeler.al(p["id"])["durum"] == "onay_bekliyor" and projeler.acik_projeler() == []
+    assert [x["id"] for x in projeler.onay_bekleyenler()] == [p["id"]]
+    projeler.reddet(p["id"], "footer eksik")
+    q = projeler.al(p["id"])
+    assert q["durum"] == "acik" and q["notlar"][-1]["kaynak"] == "kullanici" and "footer" in q["notlar"][-1]["metin"]
+    projeler.onay_iste(p["id"], "tamam")
+    projeler.onayla(p["id"])
+    assert projeler.al(p["id"])["durum"] == "kapali" and projeler.al(p["id"])["kapanis"]
+    try:
+        projeler.onayla(p["id"])
+        raise AssertionError
+    except ValueError:
+        pass
+
+
+def test_proje_sinirlar(tmp):
+    import projeler
+    for i in range(20):
+        projeler.ekle(f"p{i}")
+    try:
+        projeler.ekle("fazla")
+        raise AssertionError
+    except ValueError:
+        pass
+    pid = projeler.acik_projeler()[0]["id"]
+    ids = [projeler.gorev_yaz(pid, None, f"g{i}", None, "bekliyor") for i in range(31)]
+    assert ids[-1] is None and len(projeler.al(pid)["gorevler"]) == 30
+    projeler.ilerleme_yaz(pid, 140)
+    assert projeler.al(pid)["ilerleme"] == 100
+    for i in range(55):
+        projeler.not_ekle(pid, f"n{i}", "ceo")
+    assert len(projeler.al(pid)["notlar"]) == 50
+    projeler.kapat(pid)
+    projeler.ekle("yer açıldı")                      # kapalı proje açık sınırına sayılmaz
+
+
+def test_evet_mi():
+    import projeler
+    for e in ("evet", "EVET.", "Evet, bitti!", "tamam", "Onaylıyorum", "ONAYLIYORUM", " bitti "):
+        assert projeler.evet_mi(e), e
+    for h in ("evet ama footer eksik", "hayır", "", "bitmedi", "..."):
+        assert not projeler.evet_mi(h), h
+
+
+def test_proje_dosyasi_ajanlara_yasak():
+    y = ortak.yasakli_araclar({})
+    assert "Read(**/projeler.json)" in y and "Read(**/toplantilar.json)" in y
+    assert ortak.veri_kacis("</x>") == "<\/x>"
+
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8")  # Windows'ta yönlendirilmiş çıktı cp1254 olabilir

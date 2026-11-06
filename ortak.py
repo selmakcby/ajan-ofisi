@@ -65,7 +65,14 @@ class YapilandirmaHatasi(Exception):
 
 
 VARSAYILAN_YASAK = ["Read(**/.env)", "Read(**/.env.*)", "Read(~/.env)", "Bash(rm:*)", "Bash(git push:*)",
-                    "Bash(curl:*)", "Bash(open:*)"]
+                    "Bash(curl:*)", "Bash(open:*)",
+                    # proje takip yalnız CEO (sunucu süreci) ve kullanıcı içindir
+                    "Read(**/projeler.json)", "Read(**/toplantilar.json)"]
+
+
+def veri_kacis(metin):
+    """Prompt'a VERİ olarak giren metin kendi etiketini kapatamasın (</ofis_durumu> vb.)."""
+    return str(metin).replace("</", "<\\/")
 
 
 def en_kucuk_yapilandirma():

@@ -198,9 +198,7 @@ def ofis_durumu_metni(tablo):
     return metin if len(metin) <= OFIS_DURUMU_MAKS else metin[:OFIS_DURUMU_MAKS - 1] + "…"
 
 
-def veri_kacis(metin):
-    """Prompt'a VERİ olarak giren metin kendi etiketini kapatamasın (</ofis_durumu> vb.)."""
-    return str(metin).replace("</", "<\\/")
+veri_kacis = ortak.veri_kacis
 
 
 def ceo_promptu(metin, tablo, onceki_cevap=None):
