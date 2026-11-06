@@ -47,6 +47,14 @@ kapatır, `?hafif=1` düşük çözünürlük ve küçük gölgeyle çizer. (Ön
 
 Bir kediye tıkla → panelden hazır görev ver, ya da alttaki kutudan CEO'ya derdini anlat.
 
+### Eğlence odası ve kedi yatakları
+Ofiste her zaman bir **Eğlence Odası** vardır (ajan atanmaz): PlayStation'lı TV, kanepe, bilardo, iki tavla masası,
+çay-kahve köşesi ve koltuklar. **Gündüz (08:00–19:59)** işi olmayan kediler masadan kalkıp buraya zıplar; kimi oyun
+oynar, kimi bilardo ya da tavla başındadır, ara sıra başlarının üstünde "Miyaw", "Mır mır" balonları çıkar. Yerler 3
+dakikada bir değişir. **Gece (20:00–07:59)** boştaki kediler masada değil, kendi odalarının yatağında uyur. İş gelince
+kedi masasına döner, bitince yine molaya/yatağa gider. Hepsi tarayıcıda olur: model çağrısı yok, **0 token**.
+Denemek için adrese `?saat=23` (gece) ya da `?saat=12` (gündüz) ekleyebilirsin.
+
 ### Sektör şablonları
 Kurulumda ya da **Ajanlar → Şablondan ekle** ile: **Yazılım ekibi**, **Influencer / içerik üreticisi**, **Dijital
 pazarlama ajansı**, **E-ticaret mağazası**, **Küçük işletme ön büro**, **Eğitim / online kurs**, **Danışmanlık / ajans

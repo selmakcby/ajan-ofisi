@@ -324,6 +324,7 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
 
     const uyur = durum === 'uyuyor' && !meme;
     const yaz = (!meme && durum === 'calisiyor') || (meme && meme.yaz && !uyaniyor());
+    const oyun = !meme && durum === 'oynuyor'; // eğlence odası: oyun kolu/ıstaka/zar — patiler hızlı ve küçük
     const ek = {};
     if (uyur) {
       const n = Math.sin(t * 1.7);
@@ -333,6 +334,12 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
       const h = meme?.yazHiz || 11;
       ek.onL = { rx:Math.sin(t * h) * .16 }; ek.onR = { rx:Math.sin(t * h + Math.PI) * .16 };
       ek.bas = { rx:Math.sin(t * 2.3) * .03 };
+    }
+    if (oyun) {
+      ek.onL = { rx:-.35 + Math.sin(t * 15) * .09 }; ek.onR = { rx:-.35 + Math.sin(t * 15 + 1.3) * .09 };
+      ek.bas = { rx:Math.sin(t * 1.7) * .05, ry:Math.sin(t * .9) * .12 };
+    } else if (!meme && durum === 'dinleniyor') {
+      ek.bas = { ry:Math.sin(t * .6) * .35, rx:Math.sin(t * .8) * .05 }; // etrafa bakınır
     }
     if (!uyur) { ek.k4 = { rz:Math.sin(t * 3.1) * .3 }; ek.k5 = { rz:Math.sin(t * 3.1 - .6) * .45 }; }
     const bitiyor = durum === 'bitti' && bittiT >= 0 && !meme;

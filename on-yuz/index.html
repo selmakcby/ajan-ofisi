@@ -322,6 +322,8 @@ import { createCat, ajanDeseni, ajanAksesuari } from './kedi.js';
 import { memeKur, memeBul } from './meme.js';
 import { portreleriUret } from './portre.js';
 import { dekorKur, masaLambasi } from './dekor.js';
+import { eglenceKur, tasmaYerleri, yatakKur, balonDoku } from './eglence.js';
+import { geceMi, saatAl, yerAta, balonMetni, sonrakiBalon, TUR_MS } from './eglence-mantik.js';
 
 const PARAM = new URLSearchParams(location.search);
 const DEMO = PARAM.get('demo') === '1';
@@ -345,6 +347,8 @@ const TEMALAR = {
   atolye:{ hali1:'#c48f1d', hali2:'#e9805f', ad:'Atölye', zemin:'#fcefc9', duvar:'#ecbc4a', altin:true, aciklama:'Prototip, demo sayfası, küçük araçlar. Push/deploy yok; yerel taslak ve inceleme.' },
   bakim:{ hali1:'#5f8a3e', hali2:'#f2876b', ad:'Bakım & Güvenlik', zemin:'#e8efda', duvar:'#a8c486', kapi:true, aciklama:'Temizlikçi yer açma planı çıkarır, hiçbir şey silmez. Bekçi kapıda: indirilen dosyaları açılmadan denetler.' },
   posta:{ hali1:'#c9566e', hali2:'#86cf9f', ad:'Posta Odası', zemin:'#fbdde3', duvar:'#ef8fa2', aciklama:'Gelen kutusunu okur, eler. Yalnız istekte “mail” geçince çalışır; cevap hep taslak.' },
+  _eglence:{ hali1:'#e0703f', hali2:'#7fc8a9', ad:'Eğlence Odası', w:14, d:10, zemin:'#fbeedd', duvar:'#f2b26b', eglence:true,
+    aciklama:'Boştaki kediler gündüz burada: PlayStation, bilardo, tavla, çay-kahve. Sohbetleri “miyav”dan ibaret; model çağrısı yok, 0 token.' },
   veri:{ hali1:'#4b5bb0', hali2:'#6cc3c8', ad:'Veri Odası', zemin:'#e1e5f6', duvar:'#8a98d8', aciklama:'Link ve kaynak deposunu her sabah ayıklar.', not:'Dışarıdan gelen içerik ajana talimat olarak gitmez, veri olarak gelir. Ajan web’de gözü kapalı gezinmez.\nİki yan masa (kaynak taraması, link deposu) aynı Veri ajanının alt masalarıdır.' },
 };
 // bilinmeyen oda id'si için krem-pastel setler: [hali1, hali2, zemin, duvar]
@@ -724,6 +728,11 @@ ODALAR = [...new Set(['ceo', ...apiOdalar.map(o => o?.id), ...yerlesecek.map(a =
     if (c) ['ad', 'aciklama', 'not'].forEach(k => { if (typeof c[k] === 'string') o[k] = c[k].slice(0, k === 'ad' ? 40 : 600); });
     odaOlcu(o, yerlesecek); return o;
   });
+// eğlence odası: her zaman var, ajan atanmaz (id '_eglence' ajanlar.json'da üretilemez); boştaki kediler gündüz burada
+const EGLENCE = { id:'_eglence', tema:'_eglence', ...odaTema('_eglence') };
+EGLENCE.w0 = EGLENCE.w; EGLENCE.d0 = EGLENCE.d; EGLENCE.yerler = [];
+let gece = geceMi(saatAl(location.search)); // 20:00–07:59; ?saat=23 ile denenir
+ODALAR.push(EGLENCE);
 yerlesimKur(ODALAR);
 AJANLAR = yerlesecek.map(a => ({ ...a, ...yerHesapla(a, yerlesecek) }));
 const KULLANICI = String(apiAyarlar.kullanici || '').slice(0, 40);
@@ -757,14 +766,15 @@ gunes.shadow.camera.updateProjectionMatrix();
 /* ---------- odalar ---------- */
 const secilebilir = [];
 function odaAltYazi(oda) {
+  if (oda.eglence) return 'Boştaki kediler gündüz burada';
   const n = AJANLAR.filter(a => a.oda === oda.id).length;
   if (oda.id === 'ceo') return 'Yalnız onunla konuşursun';
   return n + ' ajan · ' + (AJANLAR.find(a => a.oda === oda.id)?.ne_zaman_metin || 'istek gelince');
 }
 function zeminCiz(oda) {
   const { ctx, t } = oda.zeminDoku;
-  const n = AJANLAR.filter(a => a.oda === oda.id).length;
-  const m = AJANLAR.filter(a => a.oda === oda.id && a.durum && a.durum !== 'uyku' && a.durum !== 'bitti').length;
+  const n = oda.eglence ? AJANLAR.filter(a => a.yerAnahtar?.startsWith('eg:')).length : AJANLAR.filter(a => a.oda === oda.id).length;
+  const m = oda.eglence ? 0 : AJANLAR.filter(a => a.oda === oda.id && a.durum && a.durum !== 'uyku' && a.durum !== 'bitti').length;
   const anahtar = n + '|' + m; if (oda.zeminAnahtar === anahtar) return; oda.zeminAnahtar = anahtar;
   ctx.clearRect(0, 0, 1024, 160);
   ctx.fillStyle = 'rgba(59,52,44,.82)';
@@ -773,7 +783,8 @@ function zeminCiz(oda) {
   ctx.fillText(oda.ad.toLocaleUpperCase('tr-TR'), 8, 68);
   ctx.letterSpacing = '0px';
   // rozet: N ajan · M çalışıyor
-  const yazi = oda.id === 'ceo' ? 'Yalnız onunla konuşursun' : n + ' ajan · ' + m + ' çalışıyor';
+  const yazi = oda.id === 'ceo' ? 'Yalnız onunla konuşursun' : oda.eglence ? (n ? n + ' kedi molada' : (gece ? 'Herkes yatağında' : 'Mola bekleniyor'))
+    : n + ' ajan · ' + m + ' çalışıyor';
   ctx.font = '600 32px Inter';
   const w = ctx.measureText(yazi).width + 44;
   ctx.fillStyle = m ? 'rgba(255,122,89,.9)' : 'rgba(255,255,255,.75)';
@@ -837,7 +848,7 @@ function camOda(oda, g) {
   kutu(g, 2.2, .04, .2, mat('#ff7a59', { emissive:'#ff7a59', emissiveIntensity:.25 }), 0, .14, oda.d / 2, .02, false);
 }
 ODALAR.forEach(odaKur);
-dekorKur(ODALAR);
+dekorKur(ODALAR.filter(o => !o.eglence));
 
 /* ---------- dekor ---------- */
 function bitki(g, x, z, s = 1) {
@@ -891,7 +902,9 @@ function rafDizisi(g, x, zler, renk = '#4a4f53') {
   });
 }
 // hazır temalı odaların kendi eşyaları (taban oda 10.4×8.4'e göre; oda yoksa atlanır)
+const ARACLAR = { kutu, mat, aoLeke, tuvalDoku };
 const TEMA_DEKOR = {
+  _eglence:g => { EGLENCE.yerler = eglenceKur(g, EGLENCE, ARACLAR); },
   yazi:g => { bitki(g, 4.2, 2.6); raf(g, -3.6, -3.3, 2.0); kutu(g, 1.2, .9, .9, '#e5a089', 4.0, .55, -2.8, .2); },
   kod:g => bitki(g, -4.2, 2.6),
   tasarim:g => {
@@ -963,6 +976,13 @@ ODALAR.forEach(o => {
     if (Math.abs(c.position.z) > .6) c.position.z += Math.sign(c.position.z) * ez;
   });
 });
+
+// her odaya kedi yatağı: gece boştaki kediler masada değil burada uyur (oda kedi sayısına göre genişler)
+ODALAR.forEach(o => {
+  const n = AJANLAR.filter(a => a.oda === o.id).length;
+  if (!o.eglence && n) o.yatak = yatakKur(o.grup, 0, o.d / 2 - 2.3, n, o.hali2, ARACLAR);
+});
+EGLENCE.yerler.push(...tasmaYerleri(Math.max(0, AJANLAR.length - EGLENCE.yerler.length)));
 
 /* ---------- hafıza çekirdeği (CEO odası) ---------- */
 const CEKIRDEK = new THREE.Vector3(-4.6, 1.75, .6);
@@ -1189,6 +1209,69 @@ function bekciEkle(g) {
   kutu(g, .24, .04, .24, '#4a443d', x, 1.15, z, .02);
 }
 AJANLAR.forEach(ajanKur);
+// kediler sahneye taşınır (masadaki yerleri saklanır): gündüz boşken eğlence odasına, gece odalarının yatağına zıplarlar
+scene.updateMatrixWorld(true);
+const KEDI_HIT = new THREE.BoxGeometry(.9, 1.2, .9);
+AJANLAR.forEach(a => {
+  const k = a.kedi.group;
+  a.olcek = a.grup.scale.x;
+  a.masaYeri = { anahtar:'masa', pos:k.getWorldPosition(new THREE.Vector3()), ry:0, durum:null };
+  scene.attach(k);
+  a.zler.forEach(s => scene.attach(s));
+  const hit = new THREE.Mesh(KEDI_HIT, new THREE.MeshBasicMaterial()); // kediye tıklayınca da panel açılsın
+  hit.visible = false; hit.position.y = .5; hit.userData.ajan = a.id; k.add(hit); secilebilir.push(hit);
+  a.balon = new THREE.Sprite(new THREE.SpriteMaterial({ transparent:true, depthWrite:false }));
+  a.balon.scale.set(1.5, .75, 1); a.balon.visible = false; scene.add(a.balon);
+  a.balonT = 2 + Math.random() * 8;
+  const oda = odaBul(a.oda), y = oda.yatak?.[AJANLAR.filter(x => x.oda === a.oda).indexOf(a)];
+  // kıvrılma pozu kökü kediye göre (-.62, .3, .84): kedinin merkezi yatak noktasına gelsin
+  if (y) a.yatakYeri = { anahtar:'yatak', pos:new THREE.Vector3(oda.cx + y.x + .62 * a.olcek, y.y - .2 * a.olcek, oda.cz + y.z - .84 * a.olcek), ry:0, durum:'uyuyor' };
+});
+
+/* ---------- gündüz/gece: kim nerede (model çağrısı yok, 0 token) ---------- */
+let atama = new Map(), atamaZaman = -9;
+function atamaGuncelle(t) {
+  if (t - atamaZaman < 1) return; atamaZaman = t;
+  gece = geceMi(saatAl(location.search));
+  const bos = gece ? [] : AJANLAR.filter(a => a.durum === 'uyku' && !a.memeAktif).map(a => a.id);
+  atama = yerAta(bos, EGLENCE.yerler.length, Math.floor(Date.now() / TUR_MS));
+  zeminCiz(EGLENCE);
+}
+function kediHedefi(a) {
+  if (a.durum !== 'uyku' || a.memeAktif) return a.masaYeri;           // iş var (ya da meme): masaya
+  if (gece) return a.yatakYeri || a.masaYeri;
+  const i = atama.get(a.id), y = EGLENCE.yerler[i];
+  if (y === undefined) return a.masaYeri;
+  return a.eglenceYeri?.i === i ? a.eglenceYeri
+    : (a.eglenceYeri = { i, anahtar:'eg:' + i, pos:new THREE.Vector3(EGLENCE.cx + y.x, y.y, EGLENCE.cz + y.z), ry:y.ry, durum:y.durum });
+}
+const aciFark = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
+function kediYuru(a, t) {
+  const h = kediHedefi(a), k = a.kedi.group;
+  if (a.yerAnahtar !== h.anahtar) {
+    if (a.yerAnahtar === undefined) { k.position.copy(h.pos); k.rotation.y = h.ry; } // ilk kare: anında yerinde
+    else {
+      const m = k.position.distanceTo(h.pos);
+      a.yol = { bas:k.position.clone(), son:h.pos.clone(), ry0:k.rotation.y, ry1:h.ry, t0:t, sure:.6 + Math.min(1.6, m * .07), h:Math.min(3.6, .6 + m * .2) };
+    }
+    a.yerAnahtar = h.anahtar; a.yerHedef = h;
+  }
+  if (a.yol) { // duvarların üstünden kavisli zıplayış
+    const p = Math.min(1, (t - a.yol.t0) / a.yol.sure), e = p < .5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2;
+    k.position.lerpVectors(a.yol.bas, a.yol.son, e); k.position.y += Math.sin(p * Math.PI) * a.yol.h;
+    k.rotation.y = a.yol.ry0 + aciFark(a.yol.ry0, a.yol.ry1) * Math.min(1, p * 2.5);
+    if (p >= 1) a.yol = null;
+  }
+  // miyav balonu: yalnız eğlence odasında, yerine varmışken
+  const sc = a.olcek;
+  if (a.yerAnahtar.startsWith('eg:') && !a.yol && !gece) {
+    if (t > a.balonT) {
+      if (a.balon.visible) { a.balon.visible = false; a.balonT = t + sonrakiBalon(Math.random()); }
+      else { a.balon.material.map = balonDoku(balonMetni(Math.random()), tuvalDoku); a.balon.material.needsUpdate = true; a.balon.visible = true; a.balonT = t + 2.4; }
+    }
+    a.balon.position.set(k.position.x, k.position.y + 1.65 * sc, k.position.z);
+  } else a.balon.visible = false;
+}
 // panel avatarları: her ajanın kendi kedisi, meme pozunda (açılışta bir kez)
 const PORTRE = portreleriUret(AJANLAR, {
   desen:a => ajanDeseni(a.id, a.oda), aksesuar:a => ajanAksesuari(a.id, a.oda),
@@ -1247,7 +1330,7 @@ async function tokenYukle() {
     tokenTazele();
   } catch { /* sayaç yoksa etiketler eskisi gibi */ }
 }
-function uykuMetni(a) { const t = tokenAl(a.id).toplam; return t ? 'uyuyor · bugün ' + kisaSayi(t) : 'uyuyor · 0 token'; }
+function uykuMetni(a) { const t = tokenAl(a.id).toplam, ne = gece ? 'uyuyor' : 'molada'; return t ? ne + ' · bugün ' + kisaSayi(t) : ne + ' · 0 token'; }
 function tokenKarti(id) {
   const t = tokenAl(id), a = ajanBul(id);
   const kart = el('div', 'token-kart');
@@ -1907,7 +1990,7 @@ function odaPaneli(oda) {
   panelAjan = null; panelOda = oda.id;
   const kapat = el('button', 'kapat', '×'); kapat.onclick = () => { SES.tik(); panelKapat(); };
   const liste = el('div', 'ajan-liste');
-  AJANLAR.filter(a => a.oda === oda.id).forEach(a => {
+  AJANLAR.filter(a => oda.eglence ? a.yerAnahtar?.startsWith('eg:') : a.oda === oda.id).forEach(a => {
     const b = el('button'); const ad = el('span', 'ad-avatar'); ad.append(avatar(a.id, 'orta'), document.createTextNode(a.ad));
     b.append(ad, el('small', null, durumMetni(a)));
     b.onmouseenter = () => SES.uzerinde();
@@ -1916,6 +1999,11 @@ function odaPaneli(oda) {
   });
   const p = el('p', 'oda-etiket', oda.aciklama); p.style.cssText = 'font-size:13px;line-height:1.45;color:#6d6357;margin-bottom:6px';
   const araclar = AJANLAR.filter(a => a.oda === oda.id).flatMap(a => a.izinli_araclar || []);
+  if (oda.eglence) { // ajan atanmaz: yalnız şu an molada olanlar
+    if (!liste.children.length) liste.append(el('small', null, gece ? 'Gece: herkes kendi odasının yatağında uyuyor.' : 'Şu an molada kimse yok; herkes işinde.'));
+    panel.replaceChildren(kapat, el('div', 'oda-etiket', 'Oda'), el('h2', null, oda.ad), p, el('h3', null, 'Şu an burada'), liste);
+    return panel.classList.add('acik');
+  }
   const parcalar = [kapat, el('div', 'oda-etiket', 'Oda'), el('h2', null, oda.ad), odaIstatistik(oda), p];
   if (oda.not) parcalar.push(el('div', 'not', oda.not));
   parcalar.push(el('h3', null, 'Ajanlar'), liste);
@@ -2406,14 +2494,18 @@ const saat = new THREE.Clock();
 let ledZaman = 0, panelZaman = 0, hatZaman = 0;
 function ajanAnimasyon(a, t, dt) {
   const uyku = a.durum === 'uyku' || a.durum === 'bekliyor';
-  a.kedi.setDurum(uyku ? 'uyuyor' : a.durum === 'bitti' || a.durum === 'dusunuyor' ? a.durum : 'calisiyor');
+  let kd = uyku ? 'uyuyor' : a.durum === 'bitti' || a.durum === 'dusunuyor' ? a.durum : 'calisiyor';
+  if (a.yol) kd = 'dinleniyor';                          // zıplarken uyanık
+  else if (a.yerHedef?.durum) kd = a.yerHedef.durum;     // eğlence odası: oynuyor/dinleniyor; yatak: uyuyor
+  a.kedi.setDurum(kd);
   a.kedi.update(dt);
+  const k = a.kedi.group.position, sc = a.olcek;
   a.lamba.material.color.set(uyku ? '#b9ad9e' : '#ff7a59');
   a.zler.forEach((s, i) => {
-    if (a.durum !== 'uyku' || a.memeAktif) { s.visible = false; return; }
+    if (kd !== 'uyuyor' || a.durum !== 'uyku' || a.memeAktif || a.yol) { s.visible = false; return; }
     s.visible = true;
     const p = ((t * .45 + a.faz + i / 3) % 1);
-    s.position.set(-.5 + p * .35, 1.3 + p * 1.0, .9);
+    s.position.set(k.x + (-.5 + p * .35) * sc, k.y + (.74 + p) * sc, k.z + .9 * sc);
     s.material.opacity = Math.sin(p * Math.PI) * .85;
     s.scale.setScalar(.3 + p * .35);
   });
@@ -2434,7 +2526,8 @@ function cekirdekGuncelle(t, dt) {
 function dongu() {
   const dt = Math.min(saat.getDelta(), .05), t = saat.elapsedTime;
   gecisGuncelle(dt);
-  AJANLAR.forEach(a => ajanAnimasyon(a, t, dt));
+  atamaGuncelle(t);
+  AJANLAR.forEach(a => { kediYuru(a, t); ajanAnimasyon(a, t, dt); });
   zarfGuncelle(dt); akisGuncelle(dt); cekirdekGuncelle(t, dt); altAjanAnimasyon(t, dt);
   if (t - ledZaman > .16) { ledZaman = t; ledCiz(t); }
   if (t - hatZaman > 1.7) {

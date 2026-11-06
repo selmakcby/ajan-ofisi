@@ -1255,6 +1255,20 @@ def test_kopan_baglanti_sessiz():  # tarayıcı isteği iptal edince (WinError 1
         assert cikti.getvalue() == "" and gonderilen == [], type(hata).__name__
 
 
+# ---------- Eğlence odası (ön yüz mantığı, node ile) ----------
+
+def test_eglence_mantik_node():
+    import shutil as _sh
+    import subprocess as _sp
+    node = _sh.which("node")
+    if not node:
+        print("    (node yok: eğlence odası mantık testi atlandı)")
+        return
+    kok = os.path.dirname(os.path.abspath(__file__))
+    r = _sp.run([node, os.path.join(kok, "test_eglence.mjs")], capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0 and "OK" in r.stdout, r.stdout + r.stderr
+
+
 # ---------- koşucu ----------
 
 def main():
