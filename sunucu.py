@@ -353,7 +353,7 @@ def oturum_yaniti(token):
     ayar = ortak.ayarlar(veri)
     if not hesap.hesap_var():
         return {"kurulum": True, "adim": "hesap" if ayar["kullanici"] else "ad", "ayarlar": ayar,
-                "kod_gerekli": KURULUM_KODU is not None}
+                "kod_gerekli": KURULUM_KODU is not None, "sunucu": ortak.SUNUCU}
     giris = hesap.oturum_gecerli(token)
     yanit = {"kurulum": False, "giris": giris, "sunucu": ortak.SUNUCU,
              "sihirbaz_bitti": bool((veri.get("ayarlar") or {}).get("kurulum_tamam"))}

@@ -281,6 +281,7 @@ td.sayi,th.sayi{text-align:right}
   <div class="bosluk"></div>
   <div class="hap"><span class="nokta" id="aktifNokta"></span><b id="aktif">0</b> ajan çalışıyor</div>
   <span class="saat" id="saat"></span>
+  <button class="dugme" id="claudeDugme">Claude</button>
   <button class="dugme" id="telegramDugme">Telegram</button>
   <button class="dugme" id="cikisDugme" title="Çıkış yap">Çıkış</button>
   <button class="dugme" id="genel">Genel bakış</button>
@@ -431,6 +432,7 @@ addEventListener('pointerdown', () => { if (ses && ses.state === 'suspended') se
 
 /* ---------- veri katmanı: gerçek API ya da demo ---------- */
 let kapiGecti = false; // giriş kontrolü geçildi mi? Önce 401 yeniden yükleme döngüsü yaratmasın
+let SUNUCU_MODU = false; // sunucuda ajanların komut yetkisi daraltılmış (yalnız git ve test komutları)
 async function getJSON(yol) {
   const r = await fetch(yol, { cache:'no-store' });
   if (r.status === 401 && kapiGecti) location.reload(); // oturum süresi doldu → giriş ekranı
@@ -477,10 +479,50 @@ function girisGoster() {
   };
   kart.append(f); setTimeout(() => ad.focus(), 0);
 }
+/* Claude bağlantısı formu: sihirbazın Claude adımı ve üst çubuktaki Claude paneli birlikte kullanır.
+   (Sahne kurulmadan önce de çalışır: tost/SES kullanmaz.) */
+const CLAUDE_TUR = { api:'API anahtarı', abonelik:'Claude aboneliği', yerel:'Bu bilgisayardaki Claude Code girişi', yok:'Bağlı değil' };
+function claudeFormu(kutu, d, yenile) {
+  const mesaj = el('div', 'tg-not');
+  const yaz = (m, hata) => { mesaj.textContent = m; mesaj.style.color = hata ? '#a1402a' : ''; };
+  const satirlar = el('div', 'satirlar');
+  const satir = (k, v) => { const s = el('div', 'satir'); s.append(el('span', null, k), el('span', null, v || '—')); satirlar.append(s); };
+  satir('Bağlantı', CLAUDE_TUR[d.tur] || d.tur);
+  if (d.son4) satir('Anahtar', '…' + d.son4);
+  kutu.append(satirlar);
+  const gonder = async (govde, btn) => {
+    btn.disabled = true; yaz(govde.islem === 'dene' ? 'Deneniyor…' : 'Kaydediliyor…');
+    const { durum, veri } = await postJSON('/api/claude', govde).catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
+    btn.disabled = false;
+    if (durum !== 200) return yaz(veri.hata || 'İşlem yapılamadı.', true);
+    if (veri.deneme) return yaz(`Bağlantı çalışıyor: “${veri.deneme.yanit}”` + (veri.deneme.maliyet_usd != null ? ` (≈ $${Number(veri.deneme.maliyet_usd).toFixed(4)})` : ''));
+    yenile(veri);
+  };
+  const form = (baslik, aciklama, yer, islem, alanAdi) => {
+    kutu.append(el('h3', null, baslik));
+    if (aciklama) kutu.append(el('p', 'tg-not', aciklama));
+    const f = el('form', 'tg-form'); const inp = el('input'); inp.type = 'password'; inp.placeholder = yer; inp.autocomplete = 'off';
+    const b = el('button', 'koyu', 'Kaydet'); b.type = 'submit'; f.append(inp, b);
+    f.onsubmit = e => { e.preventDefault(); const v = inp.value.trim(); inp.value = ''; if (v) gonder({ islem, [alanAdi]:v }, b); };
+    kutu.append(f);
+  };
+  form('API anahtarı', 'console.anthropic.com → API Keys. Kaydetmeden önce Anthropic’e ücretsiz bir istekle doğrulanır.', 'sk-ant-api…', 'anahtar', 'anahtar');
+  form('Claude aboneliği', 'Kendi bilgisayarında terminalde `claude setup-token` çalıştır; verdiği sk-ant-oat… metnini buraya yapıştır.', 'sk-ant-oat…', 'token', 'token');
+  if (!d.sunucu) kutu.append(el('p', 'tg-not', 'Bu bilgisayarda Claude Code’a zaten giriş yaptıysan hiçbirini doldurmana gerek yok.'));
+  const alt = el('div', 'tg-alt');
+  if (d.tur !== 'yok') { const t = el('button', 'dugme', 'Bağlantıyı dene (birkaç token)'); t.type = 'button'; t.onclick = () => gonder({ islem:'dene' }, t); alt.append(t); }
+  if (d.tur === 'api' || d.tur === 'abonelik') {
+    const k = el('button', 'dugme tg-kaldir', 'Kaldır'); k.type = 'button';
+    k.onclick = () => { if (confirm('Claude bağlantısı kaldırılsın mı? Ajanlar çalışamaz.')) gonder({ islem:'kaldir' }, k); };
+    alt.append(k);
+  }
+  kutu.append(alt, mesaj);
+}
 function kurulumGoster(oturum) {
   const kart = katmanKur('kurulum');
-  const ADIMLAR = 4;
-  let adim = oturum.kurulum ? 1 : 3; // hesap var ve giriş yapılmış (mevcut kurulum): ajanlardan devam
+  const ADIMLAR = 5;
+  let adim = oturum.kurulum ? 1 : 3; // hesap var ve giriş yapılmış (mevcut kurulum): Claude bağlantısından devam
+  let kurulumKodu = '';
   const ayar = oturum.ayarlar || {};
   const ciz = (...parcalar) => {
     const cubuk = el('div', 'adimlar-k');
@@ -489,6 +531,7 @@ function kurulumGoster(oturum) {
   };
   const dugmeler = (geri, ileri) => { const d = el('div', 'dugmeler-k'); d.append(geri || el('span'), ileri); return d; };
   const gonder = async (govde, hata) => {
+    if (kurulumKodu) govde = { ...govde, kod:kurulumKodu }; // sunucu: günlükteki tek kullanımlık kod
     const { durum, veri } = await postJSON('/api/kurulum', govde).catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
     if (durum !== 200) { hata.textContent = veri.hata || 'Kaydedilemedi.'; return false; }
     return true;
@@ -501,16 +544,23 @@ function kurulumGoster(oturum) {
     const [l2, marka] = alan('Ofisinin adı (isteğe bağlı)', 'text', ayar.marka && ayar.marka !== 'Ajan Ofisi' ? ayar.marka : '', 'Ajan Ofisi');
     ad.maxLength = marka.maxLength = 40;
     const ileri = el('button', 'ana', 'Devam'); ileri.type = 'submit';
-    f.append(el('h1', null, 'Hoş geldin'), el('p', 'alt', 'Birkaç adımda ofisini kuralım. Önce seni tanıyalım.'), l1, ad, l2, marka, hata, dugmeler(null, ileri));
+    const parcalar = [el('h1', null, 'Hoş geldin'), el('p', 'alt', 'Birkaç adımda ofisini kuralım. Önce seni tanıyalım.')];
+    let kodI = null;
+    if (oturum.kod_gerekli) { // internete açık sunucu: ofisi ancak sunucu günlüğündeki kodu bilen kurar
+      const [lk, k] = alan('Kurulum kodu', 'text', kurulumKodu, '8 haneli kod'); kodI = k; k.inputMode = 'numeric'; k.maxLength = 8;
+      parcalar.push(lk, k, el('p', 'tg-not', 'Kod sunucunun günlüğünde: docker compose logs ofis'));
+    }
+    f.append(...parcalar, l1, ad, l2, marka, hata, dugmeler(null, ileri));
     f.onsubmit = async e => {
       e.preventDefault(); ileri.disabled = true;
+      if (kodI) kurulumKodu = kodI.value.trim();
       if (await gonder({ adim:'ad', kullanici:ad.value.trim(), marka:marka.value.trim() }, hata)) {
         Object.assign(ayar, { kullanici:ad.value.trim(), marka:marka.value.trim() });
-        return oturum.kurulum ? adim2() : adim3();
+        return oturum.kurulum ? adim2() : adimClaude();
       }
       ileri.disabled = false;
     };
-    ciz(f); setTimeout(() => ad.focus(), 0);
+    ciz(f); setTimeout(() => (kodI || ad).focus(), 0);
   }
   function adim2() {
     adim = 2;
@@ -527,13 +577,28 @@ function kurulumGoster(oturum) {
       if (s1.value.length < 8) { hata.textContent = 'Şifre en az 8 karakter olmalı.'; return; }
       if (s1.value !== s2.value) { hata.textContent = 'Şifreler eşleşmiyor.'; return; }
       ileri.disabled = true;
-      if (await gonder({ adim:'hesap', kullanici_adi:kad.value.trim(), sifre:s1.value }, hata)) return adim3();
+      if (await gonder({ adim:'hesap', kullanici_adi:kad.value.trim(), sifre:s1.value }, hata)) return adimClaude();
       ileri.disabled = false;
     };
     ciz(f); setTimeout(() => kad.focus(), 0);
   }
-  async function adim3() {
+  async function adimClaude() {
     adim = 3;
+    const kutu = el('div'); const hata = el('div', 'hata-k');
+    let d;
+    try { d = await getJSON('/api/claude'); } catch { d = { tur:'yok', sunucu:true }; hata.textContent = 'Claude durumu alınamadı.'; }
+    const ileri = el('button', 'ana', 'Devam'); ileri.type = 'button'; ileri.onclick = adim3;
+    const ciz2 = v => {
+      const ic = el('div'); claudeFormu(ic, v, ciz2);
+      kutu.replaceChildren(el('h1', null, 'Claude bağlantısı'),
+        el('p', 'alt', 'Ajanların çalışması için Claude’a bağlanmalı. API anahtarı ya da aboneliğinle bağlan; sonra üstteki “Claude” panelinden değiştirebilirsin.'),
+        ic, hata, dugmeler(null, ileri));
+      ileri.textContent = v.tur === 'yok' ? 'Şimdilik atla' : 'Devam';
+    };
+    ciz2(d); ciz(kutu);
+  }
+  async function adim3() {
+    adim = 4;
     const hata = el('div', 'hata-k'); const bilgi = el('div', 'bilgi-k');
     const kutu = el('div'); const secim = el('div');
     let sablonlar = [], mevcut = [];
@@ -577,13 +642,14 @@ function kurulumGoster(oturum) {
       izgara.append(k); kartlar.push(k);
     });
     const ileri = el('button', 'ana', 'Devam'); ileri.type = 'button'; ileri.onclick = adim4;
+    const geri = el('button', 'dugme', 'Geri'); geri.type = 'button'; geri.onclick = adimClaude;
     kutu.append(el('h1', null, 'Ajanlarını seç'), durumP,
       el('p', 'alt', 'Sektörüne uygun bir şablonla hazır bir ofisle başla ya da boş başla. Ajanları sonra üstteki “Ajanlar” sekmesinden ekleyip düzenleyebilirsin.'),
-      izgara, secim, hata, bilgi, dugmeler(null, ileri));
+      izgara, secim, hata, bilgi, dugmeler(geri, ileri));
     ciz(kutu);
   }
   function adim4() {
-    adim = 4;
+    adim = 5;
     const hata = el('div', 'hata-k');
     const gir = el('button', 'ana', 'Ofise gir'); gir.type = 'button';
     gir.onclick = async () => { gir.disabled = true; if (await gonder({ adim:'bitir' }, hata)) return location.reload(); gir.disabled = false; };
@@ -593,13 +659,14 @@ function kurulumGoster(oturum) {
       hata, dugmeler(null, gir));
     ciz(k);
   }
-  adim === 1 ? adim1() : adim3();
+  adim === 1 ? adim1() : adimClaude();
 }
 if (!DEMO) {
   let oturum = null;
   try { oturum = await getJSON('/api/oturum'); } catch { /* sunucu yok: aşağıdaki "sunucu yok" akışı sürer */ }
   if (oturum && (oturum.kurulum || (oturum.giris && !oturum.sihirbaz_bitti))) { kurulumGoster(oturum); await new Promise(() => {}); }
   else if (oturum && !oturum.giris) { girisGoster(); await new Promise(() => {}); }
+  SUNUCU_MODU = !!oturum?.sunucu;
   kapiGecti = !!oturum; // oturum alınamadıysa (sunucu hatası) yenileme döngüsüne girme; "sunucu yok" akışı sürer
 }
 
@@ -2158,7 +2225,7 @@ function ajanFormu(a, v) {
       const liste = araclar.value.split('\n').map(s => s.trim()).filter(Boolean).filter(x => !YETKI_ARACLARI[k].includes(x));
       araclar.value = (c.checked ? [...liste, ...YETKI_ARACLARI[k]] : liste).join('\n');
     };
-    l.append(c, document.createTextNode(ad2)); det.append(l); return c;
+    l.append(c, document.createTextNode(k === 'komut' && SUNUCU_MODU ? ad2 + ' (sunucuda yalnız git ve test komutları)' : ad2)); det.append(l); return c;
   });
   const arDet = el('details'); arDet.append(el('summary', null, 'Araç listesi (ileri düzey)'), araclar,
     el('div', 'ipucu', 'Her satıra bir Claude Code aracı. Güvenlik yasakları (.env okuma, rm, git push…) her ajana ayrıca eklenir.'));
@@ -2372,6 +2439,17 @@ function tgCiz(kutu, d, mesaj) {
   }
 }
 $('telegramDugme').onclick = () => { SES.tik(); telegramPaneli(); };
+async function claudePaneli() {
+  panelAjan = panelOda = null; odaVurgu(null);
+  const kapat = el('button', 'kapat', '×'); kapat.onclick = () => { SES.tik(); panelKapat(); };
+  const kutu = el('div', 'tg-panel');
+  panel.replaceChildren(kapat, el('div', 'oda-etiket', 'Bağlantı'), el('h2', null, 'Claude'), kutu); panel.classList.add('acik');
+  if (DEMO) return kutu.append(el('p', 'tg-not', 'Demo modunda Claude bağlantısı kapalı.'));
+  let d; try { d = await getJSON('/api/claude'); } catch { return kutu.append(el('p', 'tg-not', 'Sunucuya ulaşılamadı.')); }
+  if (!panel.contains(kutu)) return;
+  const ciz = v => { kutu.replaceChildren(); claudeFormu(kutu, v, ciz); }; ciz(d);
+}
+$('claudeDugme').onclick = () => { SES.tik(); claudePaneli(); };
 if (DEMO) $('cikisDugme').style.display = 'none';
 try { const b = sessionStorage.getItem('ofis-bildirim'); if (b) { sessionStorage.removeItem('ofis-bildirim'); tost(b); } } catch { /* yok */ }
 $('cikisDugme').onclick = async () => { await postJSON('/api/oturum', { islem:'cikis' }).catch(() => {}); location.reload(); };
