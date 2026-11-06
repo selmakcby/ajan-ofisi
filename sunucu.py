@@ -3,6 +3,7 @@
 
 python3 sunucu.py            # 8796, doluysa sonraki boş port
 """
+import hmac
 import json
 import os
 import re
@@ -27,7 +28,9 @@ import telegram_kopru  # noqa: E402
 import hesap  # noqa: E402
 import ajan_yonetimi  # noqa: E402
 
-HOST = "127.0.0.1"
+HOST = os.environ.get("OFIS_HOST", "127.0.0.1")  # Docker: 0.0.0.0 (port Compose'da 127.0.0.1'e açılır)
+ALAN_ADI = os.environ.get("OFIS_ALAN_ADI", "").strip().lower()  # ters vekil arkasındaki adres (ör. ofis.ornek.com)
+KURULUM_KODU = None  # internete açıkken hesap yoksa açılışta üretilir, yalnız sunucu günlüğüne yazılır
 ILK_PORT = int(os.environ.get("OFIS_PORT", "8796"))
 TMUX_OTURUM = "ofis"
 ON_YUZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "on-yuz")  # kodun yanında
@@ -73,8 +76,20 @@ ACIK_UCLAR = {("GET", "/api/oturum"), ("POST", "/api/oturum"), ("POST", "/api/ku
 
 
 def cerez(token):
-    """HttpOnly: JS okuyamaz; SameSite=Strict: başka siteden gönderilmez. Secure B'de (HTTPS) eklenecek."""
-    return f"{CEREZ_ADI}={token or ''}; HttpOnly; SameSite=Strict; Path=/; Max-Age={hesap.OTURUM_SN if token else 0}"
+    """HttpOnly: JS okuyamaz; SameSite=Strict: başka siteden gönderilmez; alan adıyla (HTTPS vekil) Secure."""
+    return (f"{CEREZ_ADI}={token or ''}; HttpOnly; SameSite=Strict; Path=/; Max-Age={hesap.OTURUM_SN if token else 0}"
+            + ("; Secure" if ALAN_ADI else ""))
+
+
+def host_izinli(host):
+    host = (host or "").lower()
+    return bool(IZINLI_HOST.match(host)) or bool(ALAN_ADI) and re.fullmatch(re.escape(ALAN_ADI) + r"(:\d+)?", host) is not None
+
+
+def origin_izinli(origin):
+    origin = (origin or "").lower()
+    return bool(IZINLI_ORIGIN.match(origin)) or bool(ALAN_ADI) and \
+        re.fullmatch(r"https?://" + re.escape(ALAN_ADI) + r"(:\d+)?", origin) is not None
 
 
 class IstekHatasi(Exception):
@@ -330,7 +345,8 @@ def oturum_yaniti(token):
         veri = {"ayarlar": {"kurulum_tamam": True}}
     ayar = ortak.ayarlar(veri)
     if not hesap.hesap_var():
-        return {"kurulum": True, "adim": "hesap" if ayar["kullanici"] else "ad", "ayarlar": ayar}
+        return {"kurulum": True, "adim": "hesap" if ayar["kullanici"] else "ad", "ayarlar": ayar,
+                "kod_gerekli": KURULUM_KODU is not None}
     giris = hesap.oturum_gecerli(token)
     yanit = {"kurulum": False, "giris": giris,
              "sihirbaz_bitti": bool((veri.get("ayarlar") or {}).get("kurulum_tamam"))}
@@ -370,10 +386,19 @@ def _giris(veri):
 
 def kurulum_islem(veri, token):
     """(kod, yanıt, çerez). Hesap açılmadan önce yalnız 'ad' ve 'hesap' girişsiz; sonrası oturum ister."""
+    global KURULUM_KODU
     adim = veri.get("adim")
     hesap_var = hesap.hesap_var()
     if hesap_var and not hesap.oturum_gecerli(token):
         return 401, {"hata": "giriş gerekli"}, None
+    if not hesap_var and KURULUM_KODU:  # internete açık sunucu: ofisi ancak günlükteki kodu bilen sahiplenebilir
+        with GIRIS_KILIDI:
+            bekle = hesap.giris_bekleme()
+            if bekle:
+                return 429, {"hata": f"Çok fazla deneme; {bekle} sn sonra tekrar dene.", "bekle_sn": bekle}, None
+            if not hmac.compare_digest(str(veri.get("kod") or "").strip().encode(), KURULUM_KODU.encode()):
+                hesap.giris_hatasi()
+                return 403, {"hata": "Kurulum kodu yanlış. Kod sunucu günlüğünde: docker compose logs ofis"}, None
     if adim == "ad":
         kullanici, marka = veri.get("kullanici", ""), veri.get("marka", "")
         if not isinstance(kullanici, str) or not isinstance(marka, str) or len(kullanici) > 40 or len(marka) > 40:
@@ -390,6 +415,7 @@ def kurulum_islem(veri, token):
             hesap.hesap_olustur(veri.get("kullanici_adi"), veri.get("sifre"))
         except ValueError as e:
             raise IstekHatasi(400, str(e)) from e
+        KURULUM_KODU = None  # hesap açıldı: kod artık geçersiz
         return 200, {"tamam": True}, cerez(hesap.oturum_ac())  # hesap açan otomatik giriş yapar
     if adim == "bitir":
         if not hesap_var:
@@ -543,18 +569,18 @@ class Isleyici(SimpleHTTPRequestHandler):
 
     def _guvenlik(self):
         host = self.headers.get("Host", "")
-        if not IZINLI_HOST.match(host):
+        if not host_izinli(host):
             self._json(403, {"hata": "host reddedildi"})
             return False
         origin = self.headers.get("Origin")
-        if origin and not IZINLI_ORIGIN.match(origin):
+        if origin and not origin_izinli(origin):
             self._json(403, {"hata": "origin reddedildi"})
             return False
         return True
 
     def _cors(self):
         origin = self.headers.get("Origin")
-        if origin and IZINLI_ORIGIN.match(origin):
+        if origin and origin_izinli(origin):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
 
@@ -792,6 +818,11 @@ def main():
     for d in (ortak.DURUM_DIZINI, ortak.KOSU_DIZINI, ortak.CIKTI_DIZINI, ortak.HAFIZA_DIZINI, ON_YUZ):
         os.makedirs(d, exist_ok=True)
     ortak.claude_md_tohumla()  # sunucuda CEO anayasası veri klasöründe düzenlenebilir
+    global KURULUM_KODU
+    if HOST != "127.0.0.1" and not hesap.hesap_var():
+        KURULUM_KODU = f"{secrets.randbelow(10 ** 8):08d}"
+        print("\n" + "=" * 52 + f"\n  KURULUM KODU: {KURULUM_KODU}\n  Tarayıcıdaki kurulum sihirbazına bu kodu gir.\n"
+              "  (Yeniden görmek için: docker compose logs ofis)\n" + "=" * 52 + "\n", flush=True)
     try:
         ortak.ajanlari_yukle()  # eksikse en küçük yapılandırma yazılır; bozuksa hemen düş
     except (ortak.YapilandirmaHatasi, ValueError, json.JSONDecodeError) as e:

@@ -1316,6 +1316,71 @@ def test_saglik_girissiz(tmp):
         s.kapat()
 
 
+# ---------- Sunucu T2: alan adı, Secure çerez, kurulum kodu ----------
+
+def _ham_istek(port, yontem, yol, basliklar, govde=None):
+    import http.client
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    veri = json.dumps(govde).encode() if govde is not None else None
+    if veri is not None:
+        basliklar = {**basliklar, "Content-Type": "application/json"}
+    c.request(yontem, yol, body=veri, headers=basliklar)
+    r = c.getresponse(); r.read(); c.close()
+    return r.status
+
+
+def test_alan_adi_kabul(tmp):
+    import sunucu
+    s = _sunucu(tmp)
+    try:
+        sunucu.ALAN_ADI = "ofis.ornek.com"
+        assert _ham_istek(s.port, "GET", "/api/saglik", {"Host": "ofis.ornek.com"}) == 200
+        assert _ham_istek(s.port, "GET", "/api/saglik", {"Host": "ofis.ornek.com:443"}) == 200
+        assert _ham_istek(s.port, "GET", "/api/saglik", {"Host": "kotu.com"}) == 403
+        assert _ham_istek(s.port, "GET", "/api/saglik", {"Host": "ofis.ornek.com.kotu.com"}) == 403
+        iyi = {"Host": "ofis.ornek.com", "Origin": "https://ofis.ornek.com"}
+        assert _ham_istek(s.port, "POST", "/api/oturum", iyi, {"islem": "cikis"}) == 200
+        assert _ham_istek(s.port, "POST", "/api/oturum", {**iyi, "Origin": "https://kotu.com"}, {"islem": "cikis"}) == 403
+        sunucu.ALAN_ADI = ""
+        assert _ham_istek(s.port, "GET", "/api/saglik", {"Host": "ofis.ornek.com"}) == 403  # alan adı yokken eski kural
+    finally:
+        sunucu.ALAN_ADI = ""
+        s.kapat()
+
+
+def test_secure_cerez(tmp):
+    import sunucu
+    assert "Secure" not in sunucu.cerez("t")
+    sunucu.ALAN_ADI = "ofis.ornek.com"
+    try:
+        assert sunucu.cerez("t").endswith("; Secure") and "; Secure" in sunucu.cerez(None)
+    finally:
+        sunucu.ALAN_ADI = ""
+
+
+def test_kurulum_kodu(tmp):
+    import hesap
+    import sunucu
+    s = _sunucu(tmp)
+    sunucu.KURULUM_KODU = "12345678"
+    hesap.giris_basarili()
+    try:
+        assert s.istek("GET", "/api/oturum")[1]["kod_gerekli"] is True
+        assert s.istek("POST", "/api/kurulum", {"adim": "ad", "kullanici": "X"})[0] == 403
+        kodlar = [s.istek("POST", "/api/kurulum", {"adim": "ad", "kullanici": "X", "kod": "00000000"})[0] for _ in range(6)]
+        assert kodlar[:5] == [403] * 5 and kodlar[5] == 429, kodlar   # yanlış kodlar giriş sayacına eklenir
+        hesap.giris_basarili()
+        assert s.istek("POST", "/api/kurulum", {"adim": "ad", "kullanici": "Ramazan", "kod": "12345678"})[0] == 200
+        assert s.istek("POST", "/api/kurulum", {"adim": "hesap", "kullanici_adi": "ramazan", "sifre": "gizli-sifre-1",
+                                                "kod": "12345678"})[0] == 200
+        assert sunucu.KURULUM_KODU is None                         # hesap açılınca kod geçersiz
+        assert "kod_gerekli" not in s.istek("GET", "/api/oturum")[1]
+    finally:
+        sunucu.KURULUM_KODU = None
+        hesap.giris_basarili()
+        s.kapat()
+
+
 # ---------- koşucu ----------
 
 def main():
