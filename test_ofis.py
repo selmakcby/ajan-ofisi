@@ -96,9 +96,15 @@ def test_soru_kaydi():
 
 def test_mesaj_esleme_sinir():
     import sorular
-    for i in range(510):
-        sorular.mesaj_esle(i, {"tip": "ceo", "cevap": str(i)})
-    assert sorular.mesaj_hedefi(5) is None and sorular.mesaj_hedefi(509)["cevap"] == "509"
+    assert sorular.MAKS_MESAJ == 500
+    eski, sorular.MAKS_MESAJ = sorular.MAKS_MESAJ, 5  # Windows'ta 500 dosya yazımı yavaş; davranış aynı
+    try:
+        for i in range(8):
+            sorular.mesaj_esle(i, {"tip": "ceo", "cevap": str(i)})
+    finally:
+        sorular.MAKS_MESAJ = eski
+    assert sorular.mesaj_hedefi(2) is None and sorular.mesaj_hedefi(3)["cevap"] == "3"
+    assert sorular.mesaj_hedefi(7)["cevap"] == "7"
 
 
 def test_devam_kuyrugu():
@@ -251,6 +257,177 @@ def test_bitir_durum_olaydan_once(tmp):
     finally:
         ortak.olay_yaz = eski
     assert gorulen == ["bitti"]  # izleyici kosu_bitti'yi gördüğünde ajan artık meşgul değil
+
+
+# ---------- Task 6: telegram.py ----------
+
+class SahteApi:
+    def __init__(self, guncellemeler=None, hata=None):
+        self.gonderilen, self.g, self.hata, self.sayac = [], list(guncellemeler or []), hata, 100
+
+    def guncellemeler(self, ofset):
+        if self.hata:
+            raise self.hata
+        g, self.g = self.g, []
+        return g
+
+    def gonder(self, chat_id, metin, yanit_id=None):
+        self.sayac += 1
+        self.gonderilen.append((chat_id, metin, yanit_id))
+        return self.sayac
+
+    def cagir(self, metod, **p):
+        return {}
+
+
+def _mesaj(metin, gonderen=42, yanit=None, uid=1):
+    m = {"message_id": 500 + uid, "text": metin, "from": {"id": gonderen, "first_name": "Ramazan"},
+         "chat": {"id": gonderen}}
+    if yanit is not None:
+        m["reply_to_message"] = {"message_id": yanit}
+    return {"update_id": uid, "message": m}
+
+
+def _bot(tmp, kullanici=42, mesgul=False, api=None):
+    import json as _json
+    import telegram_kopru as telegram
+    yol = os.path.join(tmp, "ajanlar.json")
+    os.makedirs(os.path.join(tmp, "yazar"), exist_ok=True)
+    _json.dump({"ajanlar": [{"id": "yazar", "ad": "Yazar", "cwd": os.path.join(tmp, "yazar")},
+                            {"id": "ceo", "ad": "CEO", "cwd": tmp}]}, open(yol, "w", encoding="utf-8"))
+    ortak.AJANLAR_DOSYASI = yol
+    cagrilar = []
+
+    def gorev_baslat(ajan, **k):
+        cagrilar.append(("gorev", ajan, k))
+        if mesgul:
+            raise MesgulHata("ajan zaten çalışıyor")
+        return {"kosu_id": "k9", "ajan": ajan}
+
+    def ceo_calistir(metin, **k):
+        cagrilar.append(("ceo", metin, k))
+        return {"cevap": "Herkes uyuyor.", "baslatilan": [], "reddedilen": []}
+
+    api = api or SahteApi()
+    bot = telegram.Bot({"token": "1:x", "kullanici": kullanici, "rapor_saati": (18, 0)}, api,
+                       gorev_baslat, ceo_calistir, env_yolu=os.path.join(tmp, ".env"))
+    return bot, api, cagrilar
+
+
+def test_kisalt_4096():
+    import telegram_kopru as telegram
+    m = telegram.kisalt("*_[" * 3000, ek="cikti/x.md")
+    assert len(m) <= 4096 and m.endswith("cikti/x.md")
+    assert telegram.kisalt("kısa") == "kısa"
+
+
+def test_yonlendir():
+    import telegram_kopru as telegram
+    t = {"yazar": {"id": "yazar", "kurulu": True}, "eski": {"id": "eski", "kurulu": False}}
+    assert telegram.yonlendir("ne yapıyorsunuz?", None, t) == {"tip": "ceo", "metin": "ne yapıyorsunuz?", "onceki_cevap": None}
+    assert telegram.yonlendir("@yazar taslak yaz", None, t) == {"tip": "ajan", "ajan": "yazar", "prompt": "taslak yaz"}
+    assert telegram.yonlendir("@ceo durum?", None, t)["tip"] == "ceo"
+    soru = {"tip": "soru", "soru_id": "k", "ajan": "yazar", "session_id": "s"}
+    assert telegram.yonlendir("onaylıyorum", soru, t) == {"tip": "devam", "ajan": "yazar", "session_id": "s",
+                                                          "cevap": "onaylıyorum", "soru_id": "k"}
+    r = {"tip": "rapor", "maddeler": [{"ajan": "yazar", "session_id": "s", "kosu_id": "k"}]}
+    assert telegram.yonlendir("1 geri al", r, t)["session_id"] == "s"
+    assert telegram.yonlendir("1 geri al", r, t)["cevap"] == "geri al"
+    assert telegram.yonlendir("5 geri al", r, t)["tip"] == "hata"
+    assert telegram.yonlendir("genel yorum", r, t)["tip"] == "ceo"
+    assert telegram.yonlendir("tamam", {"tip": "ceo", "cevap": "önceki"}, t)["onceki_cevap"] == "önceki"
+    assert telegram.yonlendir("/baslat 482913", None, t) == {"tip": "eslestir", "kod": "482913"}
+
+
+def test_yonlendir_bilinmeyen_ajan():
+    import telegram_kopru as telegram
+    t = {"eski": {"id": "eski", "kurulu": False}}
+    assert telegram.yonlendir("@yok selam", None, t)["tip"] == "hata"
+    assert telegram.yonlendir("@eski selam", None, t)["tip"] == "hata"
+
+
+def test_rapor_zamani_mi():
+    from datetime import datetime
+    import telegram_kopru as telegram
+    s = datetime(2026, 11, 6, 18, 1)
+    assert telegram.rapor_zamani_mi(s, (18, 0), None)
+    assert not telegram.rapor_zamani_mi(s, (18, 0), "2026-11-06T18:00:30+03:00")
+    assert telegram.rapor_zamani_mi(s, (18, 0), "2026-11-05T18:00:30+03:00")
+    assert not telegram.rapor_zamani_mi(datetime(2026, 11, 6, 17, 59), (18, 0), None)
+
+
+def test_yetkisiz_kullanici(tmp):
+    bot, api, c = _bot(tmp)
+    bot.isle(_mesaj("@yazar sil her şeyi", gonderen=99))
+    bot.isle(_mesaj("ne var ne yok", gonderen=99))
+    assert c == [] and api.gonderilen == []
+
+
+def test_bot_yonlendirme(tmp):
+    bot, api, c = _bot(tmp)
+    bot.isle(_mesaj("@yazar taslak yaz"))
+    assert c == [("gorev", "yazar", {"prompt": "taslak yaz", "kaynak": "telegram"})]
+    bot.isle(_mesaj("kim ne yapıyor?", uid=2))
+    assert c[-1] == ("ceo", "kim ne yapıyor?", {"kaynak": "telegram", "onceki_cevap": None})
+    assert "Herkes uyuyor." in api.gonderilen[-1][1]
+
+
+def test_bot_soruya_cevap(tmp):
+    import sorular
+    bot, api, c = _bot(tmp, mesgul=True)
+    sorular.soru_ekle("yazar", "k1", "s1", "Uygun mu?", "diger")
+    sorular.otomatik_artir("s1")
+    sorular.mesaj_esle(777, {"tip": "soru", "soru_id": "k1", "ajan": "yazar", "session_id": "s1"})
+    bot.isle(_mesaj("onaylıyorum", yanit=777))
+    assert c[0][2]["devam"] == {"session_id": "s1", "cevap": "onaylıyorum", "cevap_kaynak": "kullanici"}
+    assert sorular.otomatik_sayi("s1") == 0 and sorular.soru_al("k1")["durum"] == "cevaplandi"
+    assert sorular.devam_al("yazar")["devam"]["cevap"] == "onaylıyorum"  # meşgul → kuyruk
+    assert "meşgul" in api.gonderilen[-1][1]
+
+
+def test_eslestirme(tmp):
+    import time as _time
+    bot, api, c = _bot(tmp, kullanici=None)
+    kod = bot.kod_uret()["kod"]
+    assert len(kod) == 6 and kod.isdigit()
+    yanlis = "000000" if kod != "000000" else "111111"
+    bot.isle(_mesaj(f"/baslat {yanlis}", gonderen=77))
+    assert bot.ayar["kullanici"] is None and api.gonderilen == []
+    bot.isle(_mesaj(f"/baslat {kod}", gonderen=77, uid=2))
+    assert bot.ayar["kullanici"] == 77 and ortak.env_oku(os.path.join(tmp, ".env"))["OFIS_TELEGRAM_KULLANICI"] == "77"
+    assert len(api.gonderilen) == 1
+    bot.isle(_mesaj(f"/baslat {kod}", gonderen=88, uid=3))  # tek kullanımlık
+    assert bot.ayar["kullanici"] == 77
+    yeni = bot.kod_uret()
+    bot.kod["bitis_ts"] = _time.time() - 1  # süresi dolmuş
+    bot.isle(_mesaj(f"/baslat {yeni['kod']}", gonderen=88, uid=4))
+    assert bot.ayar["kullanici"] == 77
+
+
+def test_api_hatasi_dongu_dusurmez(tmp):
+    bot, api, c = _bot(tmp, api=SahteApi(hata=OSError("ağ yok")))
+    bot.tur()
+    assert bot.bekleme > 0 and bot.son_hata
+    bot.api.hata = None
+    bot.tur()
+    assert bot.bekleme == 0 and bot.son_hata is None
+
+
+def test_bot_ofset_ve_kapaliyken_gelenler(tmp):
+    api = SahteApi([_mesaj("@yazar bir", uid=10), _mesaj("@yazar iki", uid=11)])
+    bot, api, c = _bot(tmp, api=api)
+    bot.tur()
+    assert [x[2]["prompt"] for x in c] == ["bir", "iki"]  # geliş sırasıyla, sorulmadan
+    bot2, _, _ = _bot(tmp)
+    assert bot2.ofset == 11
+
+
+def test_bildir_soru_mesaj_eslemesi(tmp):
+    import sorular
+    bot, api, c = _bot(tmp)
+    sorular.soru_ekle("yazar", "k1", "s1", "Uygun mu?", "maliyet")
+    mid = bot.bildir("❓ yazar soruyor", {"tip": "soru", "soru_id": "k1", "ajan": "yazar", "session_id": "s1"})
+    assert sorular.mesaj_hedefi(mid)["soru_id"] == "k1" and sorular.soru_al("k1")["telegram_mesaj_id"] == mid
 
 
 # ---------- koşucu ----------

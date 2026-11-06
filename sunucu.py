@@ -22,6 +22,7 @@ import kopru  # noqa: E402
 import token_sayac  # noqa: E402
 import sorular  # noqa: E402
 import akis  # noqa: E402
+import telegram_kopru  # noqa: E402
 
 HOST = "127.0.0.1"
 ILK_PORT = int(os.environ.get("OFIS_PORT", "8796"))
@@ -541,7 +542,8 @@ class Isleyici(SimpleHTTPRequestHandler):
         self.wfile.flush()
 
 
-IZLEYICI = akis.Izleyici(gorev_baslat, ceo_triyaj)
+TELEGRAM = telegram_kopru.Yonetici(gorev_baslat, ceo_calistir)
+IZLEYICI = akis.Izleyici(gorev_baslat, ceo_triyaj, TELEGRAM.bildir)
 
 
 def bos_port_ile_ac():
@@ -569,6 +571,7 @@ def main():
     print(f"Ajan Ofisi: http://{HOST}:{port}   (demo: http://{HOST}:{port}/?demo=1)", flush=True)
     KOPRU.baslat()
     IZLEYICI.baslat()
+    TELEGRAM.baslat()
     sunucu.serve_forever()
 
 
