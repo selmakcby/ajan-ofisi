@@ -174,3 +174,70 @@ def ajan_mesgul(ajan_id):
     if surec_yasiyor(d.get("pid")):
         return True
     return d.get("durum") == "basliyor" and time.time() - d.get("baslangic_ts", 0) < 30
+
+
+# ---------- .env ve Telegram ayarı ----------
+# .env repoya girmez (.gitignore) ve ajanların okuması varsayilan_yasak_araclar ile yasaktır.
+ENV_DOSYASI = os.path.join(KOK, ".env")
+ENV_SATIRI = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
+SAAT_DESENI = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+
+
+def env_oku(yol=None):
+    """ANAHTAR=deger satırlarını okur; # ve boş satırlar atlanır, tırnaklar soyulur. Dosya yoksa {}."""
+    try:
+        with open(yol or ENV_DOSYASI, encoding="utf-8") as f:
+            satirlar = f.read().splitlines()
+    except FileNotFoundError:
+        return {}
+    sonuc = {}
+    for satir in satirlar:
+        e = ENV_SATIRI.match(satir)
+        if not e or satir.lstrip().startswith("#"):
+            continue
+        deger = e.group(2).strip()
+        if len(deger) >= 2 and deger[0] == deger[-1] and deger[0] in "\"'":
+            deger = deger[1:-1]
+        sonuc[e.group(1)] = deger
+    return sonuc
+
+
+def env_yaz(guncel, yol=None):
+    """Verilen anahtarları günceller (yoksa sona ekler), None olanları siler; diğer satırlar aynen kalır."""
+    yol = yol or ENV_DOSYASI
+    try:
+        with open(yol, encoding="utf-8") as f:
+            satirlar = f.read().splitlines()
+    except FileNotFoundError:
+        satirlar = []
+    kalan = dict(guncel)
+    yeni = []
+    for satir in satirlar:
+        e = ENV_SATIRI.match(satir)
+        if e and not satir.lstrip().startswith("#") and e.group(1) in guncel:
+            deger = kalan.pop(e.group(1), None)
+            if deger is not None:
+                yeni.append(f"{e.group(1)}={deger}")
+            continue  # silinen ya da aynı anahtarın tekrarı
+        yeni.append(satir)
+    yeni += [f"{k}={v}" for k, v in kalan.items() if v is not None]
+    gecici = yol + ".tmp"
+    with open(gecici, "w", encoding="utf-8") as f:
+        f.write("\n".join(yeni) + "\n")
+    os.replace(gecici, yol)
+
+
+def telegram_ayari(yol=None):
+    """{"token", "kullanici": int|None, "rapor_saati": (saat, dakika)}; token yoksa None. Ortam değişkeni .env'i ezer."""
+    env = env_oku(yol)
+    al = lambda k: (os.environ.get(k) or env.get(k) or "").strip()  # noqa: E731
+    token = al("OFIS_TELEGRAM_TOKEN")
+    if not token:
+        return None
+    kullanici = al("OFIS_TELEGRAM_KULLANICI")
+    saat = SAAT_DESENI.match(al("OFIS_TELEGRAM_RAPOR_SAATI"))
+    return {
+        "token": token,
+        "kullanici": int(kullanici) if kullanici.isdigit() else None,
+        "rapor_saati": (int(saat.group(1)), int(saat.group(2))) if saat else (18, 0),
+    }
