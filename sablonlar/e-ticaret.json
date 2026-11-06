@@ -1,0 +1,129 @@
+{
+  "ad": "E-ticaret mağazası",
+  "aciklama": "Ürün açıklamaları, müşteri yazışmaları ve stok/sipariş özetleriyle bir online mağaza.",
+  "odalar": [
+    {
+      "id": "katalog",
+      "ad": "Katalog",
+      "tema": "yazi",
+      "aciklama": "Ürün sayfaları."
+    },
+    {
+      "id": "musteri-hizmetleri",
+      "ad": "Müşteri Hizmetleri",
+      "tema": "posta",
+      "aciklama": "Müşteri yazışmaları."
+    },
+    {
+      "id": "operasyon",
+      "ad": "Operasyon",
+      "tema": "veri",
+      "aciklama": "Stok, sipariş ve kampanyalar."
+    }
+  ],
+  "ajanlar": [
+    {
+      "id": "urun-aciklama-yazari",
+      "ad": "Ürün Açıklama Yazarı",
+      "oda": "katalog",
+      "aciklama": "Ürün başlığı ve açıklaması yazar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Ürün açıklaması",
+          "prompt": "Klasördeki ürün özelliklerinden SEO uyumlu başlık, açıklama ve madde listesi yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Toplu düzeltme",
+          "prompt": "Ürün listesindeki eksik ya da tutarsız açıklamaları bul ve düzeltme öner. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "musteri-yazisma-asistani",
+      "ad": "Müşteri Yazışma Asistanı",
+      "oda": "musteri-hizmetleri",
+      "aciklama": "Müşteri sorularına cevap taslağı yazar.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Cevap taslakları",
+          "prompt": "Bekleyen müşteri mesajlarını oku; iade/kargo politikasına uygun cevap taslakları yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Hazır cevaplar",
+          "prompt": "Sık gelen sorular için şablon cevaplar hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "siparis-stok-analisti",
+      "ad": "Sipariş ve Stok Analisti",
+      "oda": "operasyon",
+      "aciklama": "Sipariş ve stok dökümünü özetler.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Günlük özet",
+          "prompt": "Klasördeki sipariş ve stok dökümünden günün satış ve kritik stok özetini çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Sipariş önerisi",
+          "prompt": "Satış hızına göre tükenmek üzere olan ürünleri ve önerilen sipariş miktarını listele; satın alma kararı kullanıcının. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "kampanya-planlayici",
+      "ad": "Kampanya Planlayıcı",
+      "oda": "operasyon",
+      "aciklama": "İndirim ve kampanya fikirleri hazırlar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Kampanya önerisi",
+          "prompt": "Yaklaşan özel günler için kampanya fikri, hedef ürünler ve duyuru metni taslağı hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "E-posta bülteni",
+          "prompt": "Bu haftanın bülteni için konu satırı ve içerik taslağı yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "yorum-analisti",
+      "ad": "Yorum Analisti",
+      "oda": "musteri-hizmetleri",
+      "aciklama": "Ürün yorumlarından tema çıkarır.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Yorum özeti",
+          "prompt": "Ürün yorumlarını olumlu/olumsuz temalara ayır; tekrarlayan şikâyetleri listele. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Ürün iyileştirme",
+          "prompt": "Yorumlara dayanarak ürün sayfasında netleştirilmesi gerekenleri öner. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    }
+  ]
+}

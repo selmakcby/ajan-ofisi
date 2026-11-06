@@ -1,0 +1,130 @@
+{
+  "ad": "Danışmanlık / ajans hesap yönetimi",
+  "aciklama": "Araştırma, müşteri raporu, sunum ve teklif taslaklarıyla bir danışmanlık ekibi.",
+  "odalar": [
+    {
+      "id": "arastirma",
+      "ad": "Araştırma",
+      "tema": "arastirma",
+      "aciklama": "Pazar ve sektör araştırması."
+    },
+    {
+      "id": "sunum",
+      "ad": "Sunum",
+      "tema": "tasarim",
+      "aciklama": "Rapor ve sunum taslakları."
+    },
+    {
+      "id": "hesap-yonetimi",
+      "ad": "Hesap Yönetimi",
+      "tema": "posta",
+      "aciklama": "Müşteri ilişkileri ve teklifler."
+    }
+  ],
+  "ajanlar": [
+    {
+      "id": "pazar-arastirmaci",
+      "ad": "Pazar Araştırmacı",
+      "oda": "arastirma",
+      "aciklama": "Sektör ve rakip araştırması yapar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "web"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Sektör özeti",
+          "prompt": "Müşterinin sektörü için pazar büyüklüğü, eğilimler ve oyuncuları kaynaklı özetle. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Rakip karşılaştırması",
+          "prompt": "Klasördeki rakipleri ürün, fiyat konumu ve mesaj açısından karşılaştır. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "musteri-rapor-yazari",
+      "ad": "Müşteri Rapor Yazarı",
+      "oda": "sunum",
+      "aciklama": "Bulgulardan müşteri raporu yazar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Dönem raporu",
+          "prompt": "Analiz notlarından yönetici özeti, bulgular ve öneriler içeren bir rapor taslağı yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Yönetici özeti",
+          "prompt": "Uzun rapordan bir sayfalık yönetici özeti çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "sunum-taslakcisi",
+      "ad": "Sunum Taslakçısı",
+      "oda": "sunum",
+      "aciklama": "Rapordan slayt akışı çıkarır.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Slayt akışı",
+          "prompt": "Rapordan 10-12 slaytlık bir sunum akışı ve slayt başına ana mesaj yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Konuşmacı notları",
+          "prompt": "Sunum akışı için konuşmacı notları hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "teklif-yazari",
+      "ad": "Teklif Yazarı",
+      "oda": "hesap-yonetimi",
+      "aciklama": "Proje teklif ve kapsam metni yazar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Proje teklifi",
+          "prompt": "Müşteri ihtiyacına göre kapsam, iş adımları ve teslimatları içeren teklif taslağı yaz; ücreti boş bırak. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Kapsam değişikliği",
+          "prompt": "Kapsam değişikliği talebi için etki ve seçenekleri açıklayan bir yazı taslağı hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "toplanti-hazirlik-asistani",
+      "ad": "Toplantı Hazırlık Asistanı",
+      "oda": "hesap-yonetimi",
+      "aciklama": "Müşteri toplantısına hazırlık notu çıkarır.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Toplantı brifingi",
+          "prompt": "Müşteriyle ilgili son notlardan toplantı öncesi kısa bir brifing hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Soru listesi",
+          "prompt": "Toplantıda sorulacak açık soruları önceliklendir. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    }
+  ]
+}

@@ -27,26 +27,54 @@ Alt kutuya "blog taslağı yaz" gibi bir şey yazarsan sahte CEO işi uygun ajan
 kapatır, `?hafif=1` düşük çözünürlük ve küçük gölgeyle çizer. (Ön yüz ES modülü kullandığı için dosyayı çift tıklayıp
 `file://` ile açmak çalışmaz; yukarıdaki gibi basit bir sunucu yeter.)
 
-## Kendi ajanını nasıl bağlarsın
+## Kurulum
 
-1. **Yapılandırmayı kopyala.**
-   ```bash
-   cp ajanlar.example.json ajanlar.json
-   cp kopru.example.json kopru.json      # isteğe bağlı: terminal köprüsü
-   ```
-   `ajanlar.json` ve `kopru.json` `.gitignore`'dadır; yolların ve prompt'ların repoya girmez.
-2. **`cwd` ve hazır görevleri yaz.** Her ajan için `cwd`'yi gerçek proje klasörüne çevir (`~` kullanabilirsin),
-   `hazir_gorevler` içindeki `<buraya kendi prompt'unu yaz>` yerlerini doldur, `izinli_araclar`'ı en dar hâlde tut.
-   `ayarlar.kullanici` selamlamadaki ad ("Günaydın Ayşe."), boş bırakırsan yalnız "Günaydın.".
-   Klasörü olmayan ajan "kurulmadı" sayılır ve koşturulmaz.
-3. **Sunucuyu başlat.**
+1. **Sunucuyu başlat.**
    ```bash
    python3 sunucu.py            # http://127.0.0.1:8796, doluysa sonraki boş port (./port dosyasına yazılır)
    tmux attach -t ofis          # koşan ajanları canlı izle (her koşu ayrı pencere)
    # Windows: tmux gerekmez; her koşu kendi konsol penceresinde açılır.
    ```
-4. **Tarayıcıda aç:** `http://127.0.0.1:8796`. Bir kediye tıkla → panelden hazır görev ver, ya da alttaki kutudan
-   CEO'ya derdini anlat.
+2. **Tarayıcıda aç:** `http://127.0.0.1:8796`. İlk açılışta **kurulum sihirbazı** gelir:
+   1. **Adın** (selamlamada görünür) ve isteğe bağlı ofis adı.
+   2. **Hesap:** kullanıcı adı + şifre (en az 8 karakter). Hesabı açınca giriş yapılmış olursun.
+   3. **Ajanlar:** "Boş başla" ya da bir **sektör şablonu** seç; şablonun ajanlarından istediklerini işaretleyip ekle.
+   4. **Ofise gir.**
+3. Sonraki her açılışta **giriş ekranı** gelir. Ajan eklemek, düzenlemek, silmek için üstteki **Ajanlar** sekmesini
+   kullan: ad, oda (var olan ya da yeni oda + görünüm) ve "ne iş yapar" yeter; çalışma klasörü, model, yetkiler,
+   hazır görevler "Gelişmiş" bölümünde. Çalışma klasörünü boş bırakırsan ofisin içinde `calisma/<ajan>/` açılır.
+   Silinen ajanın hafızası ve çıktıları diskte kalır; CEO silinemez.
+
+Bir kediye tıkla → panelden hazır görev ver, ya da alttaki kutudan CEO'ya derdini anlat.
+
+### Eğlence odası ve kedi yatakları
+Ofiste her zaman bir **Eğlence Odası** vardır (ajan atanmaz): PlayStation'lı TV, kanepe, bilardo, iki tavla masası,
+çay-kahve köşesi ve koltuklar. **Gündüz (08:00–19:59)** işi olmayan kediler masadan kalkıp buraya zıplar; kimi oyun
+oynar, kimi bilardo ya da tavla başındadır, ara sıra başlarının üstünde "Miyaw", "Mır mır" balonları çıkar. Yerler 3
+dakikada bir değişir. **Gece (20:00–07:59)** boştaki kediler masada değil, kendi odalarının yatağında uyur. İş gelince
+kedi masasına döner, bitince yine molaya/yatağa gider. Hepsi tarayıcıda olur: model çağrısı yok, **0 token**.
+Denemek için adrese `?saat=23` (gece) ya da `?saat=12` (gündüz) ekleyebilirsin.
+
+### Sektör şablonları
+Kurulumda ya da **Ajanlar → Şablondan ekle** ile: **Yazılım ekibi**, **Influencer / içerik üreticisi**, **Dijital
+pazarlama ajansı**, **E-ticaret mağazası**, **Küçük işletme ön büro**, **Eğitim / online kurs**, **Danışmanlık / ajans
+hesap yönetimi**. Her biri 4-7 ajan, 2-4 oda ve ajan başına 2-3 hazır görevle gelir; ofiste zaten olan ajan ikinci kez
+eklenmez. Şablonlar `sablonlar/<id>.json` dosyalarıdır; kendi şablonunu aynı biçimde ekleyebilirsin.
+
+### Giriş ve şifre
+- Tek kullanıcı: ofisin sahibi. Şifre düz metin saklanmaz (`hashlib.scrypt`, tuzlu), `durum/hesap.json` (0600).
+- Oturum, JavaScript'in okuyamadığı (`HttpOnly`) ve başka sitelerden gönderilmeyen (`SameSite=Strict`) bir çerezle
+  30 gün sürer; **Çıkış** düğmesi oturumu kapatır.
+- 5 yanlış denemeden sonra her deneme arasında artan bekleme (en çok 5 dakika).
+- **Şifreni unuttuysan** sunucunun çalıştığı bilgisayarda: `python3 sunucu.py --sifre-sifirla` (tüm oturumlar kapanır).
+- Demo modu (`?demo=1`) girişsiz çalışır, arka uca hiç istek atmaz.
+
+### Elle yapılandırma (ileri düzey)
+Arayüz yerine dosyayla çalışmak istersen `ajanlar.json`'ı doğrudan düzenleyebilirsin (`ajanlar.example.json` örnek;
+dosya yoksa sunucu yalnız CEO'lu bir tane oluşturur). `cwd` göreliyse ofis klasörüne göre çözülür; `~`
+kullanabilirsin. Klasörü olmayan ajan "kurulmadı" sayılır ve koşturulmaz. `ajanlar.json` ve `kopru.json`
+`.gitignore`'dadır; her arayüz kaydında bir önceki hâl `ajanlar.json.bak` olarak tutulur. Terminal köprüsü için
+isteğe bağlı: `cp kopru.example.json kopru.json`.
 
 ### Odalar ve ajan sayısı
 - **İstediğin kadar ajan, istediğin kadar oda.** Ofis `ajanlar.json`'dan kurulur: ajanın `oda` alanına ne yazarsan o oda
@@ -55,8 +83,10 @@ kapatır, `?hafif=1` düşük çözünürlük ve küçük gölgeyle çizer. (Ön
 - **Oda listede yoksa otomatik açılır.** Ad id'den türer (`ses-studyosu` → "Ses Studyosu"), renk id'ye göre sabit bir
   pastel setten gelir. `odalar` listesine yazarsan `ad`, `aciklama`, `not` senin yazdığın olur; listedeki sıra sahnedeki
   sırayı belirler. Oda id'si harf, rakam, `_` ve `-`, en çok 40 karakter; `oda` alanı boşsa ajan "Genel" odasına oturur.
-- **Hazır temalar:** `ceo`, `yazi`, `kod`, `tasarim`, `sosyal`, `arastirma`, `gun-sonu`, `atolye`, `bakim`, `posta`,
-  `veri`. Bu id'lerden birini kullanırsan oda kendi rengi ve eşyalarıyla (raf, ilham panosu, sunucu rafları…) gelir.
+- **Hazır temalar (görünüm):** `ceo`, `yazi`, `kod`, `tasarim`, `sosyal`, `arastirma`, `gun-sonu`, `atolye`, `bakim`,
+  `posta`, `veri`. Odanın `odalar` kaydına `"tema": "veri"` yazarsan oda o temanın rengi ve eşyalarıyla (raf, ilham
+  panosu, sunucu rafları…) gelir; `tema` yoksa oda id'si bir tema adıysa o kullanılır. Aynı temayı birden çok oda
+  kullanabilir. Arayüzde yeni oda eklerken "Görünüm" seçicisi bunu yazar.
 - **Masalar kendiliğinden dizilir.** Oda ajan sayısına göre genişler; 4'ten fazla ajan olunca masalar iki sıra olur.
   Masanın yerini elle vermek istersen ajana `"yer": {"x": 1.2, "lz": 1.2, "ayak": true}` ekle (`x` oda ortasına göre,
   `lz` derinlik, `ayak` ekran ayaklı).
@@ -77,8 +107,9 @@ En küçük `ajanlar.json` (3 ajan, 2 iş odası; `cwd` ve prompt'ları kendine 
   ]
 }
 ```
-Burada `muhasebe` hazır tema değil; oda kendiliğinden açılır. `varsayilan_yasak_araclar` listesini silme: her ajana
-eklenen yasaklar oradan gelir.
+Burada `muhasebe` hazır tema değil; oda kendiliğinden açılır (`odalar`'a `{"id": "muhasebe", "ad": "Muhasebe",
+"tema": "veri"}` eklersen veri temasıyla gelir). Güvenlik yasakları (`.env` okuma, `rm`, `git push`, `curl`, `open`)
+dosyada olmasa da her ajana eklenir; `varsayilan_yasak_araclar`'a yazdıkların bunlara eklenir.
 
 `CLAUDE.md` CEO'nun anayasasıdır; ofisinin kurallarını oraya yaz.
 
@@ -153,10 +184,50 @@ yeniden okunan bağlamdır (CLAUDE.md, önceki mesajlar); yeni işlenen iş değ
 toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdiği `total_cost_usd` toplamını gösterir
 (API liste fiyatı karşılığı; abonelikte faturaya yansıyan tutar değildir).
 
+### Telegram köprüsü: ofisi telefondan yönet
+Bilgisayar başında değilken ofise Telegram'dan yazarsın; ajanlar soru sorunca ya da bir şey ters gidince sana
+Telegram'dan ulaşır. Dinlemek **0 token**'dır (Telegram'a dışa doğru long polling; açık port, webhook yok).
+
+**Kurulum (2 dakika, dosya düzenlemeden):**
+1. Telegram'da **@BotFather**'a `/newbot` yaz, botuna ad ver; verdiği token'ı kopyala.
+2. Ofisi aç, sağ üstteki **Telegram** düğmesine bas, token'ı yapıştır, **Kaydet**. Sunucu token'ı Telegram'a
+   sorarak doğrular; botun adı görünür.
+3. Panel 6 haneli bir kod gösterir (10 dakika geçerli). Kendi botuna `/baslat <kod>` yaz. Panel "Bağlı" olur.
+   Bot artık **yalnız senin hesabını** dinler; başkalarının mesajlarına cevap bile vermez.
+
+Panelden gün sonu rapor saatini değiştirebilir, test mesajı gönderebilir, bağlantıyı kaldırabilirsin. Ayarlar
+`.env`'e yazılır (repoya girmez, ajanların okuması yasak); token tarayıcıya geri gönderilmez. İstersen
+`.env.example`'ı `.env` olarak kopyalayıp elle de kurabilirsin.
+
+**Kullanım:**
+- Düz mesaj → **CEO**. "Ne üzerinde çalışıyorsunuz?" gibi durum sorularına ofisin anlık durumuna bakarak
+  cevap verir, gerekirse iş dağıtır.
+- `@backend-gelistirici şu endpoint'i hızlandır` → CEO atlanır, **doğrudan o ajana** gider; bitince sonuç gelir.
+- Bot'un bir mesajına **Yanıtla** ile yazarsan o işe döner: ajanın sorusuna cevap verirsen ajan **aynı oturumu
+  kaldığı yerden sürdürür** (okuduğu dosyalar, yazdığı plan bağlamda kalır); sonuca "şunu da düzelt" dersen aynı
+  işe devam eder.
+- Sunucu kapalıyken yazdıkların (Telegram 24 saat saklar) sunucu açılınca sırayla, sorulmadan işlenir.
+
+**Soru soran ajan ve CEO'nun karar yetkisi:** ajan kararın gereken bir noktaya gelince işi bırakır ve
+`<soru tur="…">` ile sorar. `maliyet`, `buyuk-degisiklik`, `yayin-mail-para` türündeki sorular CEO'ya hiç
+sorulmadan **sana** gelir. Diğerlerinde CEO, `CLAUDE.md`'deki "Karar yetkisi" kurallarına göre ya kendisi cevap
+verir (ajan devam eder) ya da soruyu notuyla sana iletir; emin değilse sana sorar. CEO aynı işte en fazla 3 kez
+kendi cevap verir, 4. soru sana gelir. Cevap beklerken ajan token harcamaz; arayüzde "cevap bekliyor" görünür.
+
+**Aksilik ve rapor:** bir koşu hatayla biterse hemen haber gelir. CEO'nun kendi verdiği kararlar her gün rapor
+saatinde (varsayılan 18:00) numaralı tek mesaj olarak gelir; rapora Yanıtla ile `2 geri al` yazarsan 2. maddenin
+ajanına döner. Rapor model çağırmadan kayıtlardan derlenir.
+
 ### API
 | Uç | Ne |
 |---|---|
+| `GET /api/oturum` · `POST /api/oturum` | oturum durumu (kurulum gerekli mi, giriş var mı) · `{"islem": "giris"\|"cikis"}` — girişsiz açık |
+| `POST /api/kurulum` | sihirbaz adımları `{"adim": "ad"\|"hesap"\|"bitir"}` — hesap açılmadan önce girişsiz, sonra oturum ister |
 | `GET /api/ajanlar` | ajanlar + `kurulu`, `durum`, `son_kosu`, `odalar`, `ayarlar` (cwd ve görev prompt'ları gönderilmez) |
+| `GET /api/ajanlar/<id>` | düzenleme formu için tek ajanın tüm alanları + `yetkiler` |
+| `POST /api/ajanlar` | `{"islem": "ekle"\|"guncelle"\|"sil"\|"sablon", …}`; doğrulama hatası 400, çalışan ajanı silme 409 |
+| `POST /api/odalar` | `{"islem": "ekle"\|"guncelle", "ad", "tema", "aciklama"}` |
+| `GET /api/sablonlar` | sektör şablonları (ad, açıklama, odalar, ajanlar; prompt'lar hariç) |
 | `POST /api/gorev` | `{"ajan": id, "etiket": "<hazır görev>"}` ya da `{"ajan": id, "prompt": "..."}` → 202; çalışıyorsa 409 |
 | `POST /api/ceo` | `{"metin": "...", "kuru": false}` → `{cevap, atamalar, baslatilan, reddedilen}`; `kuru: true` yalnız plan |
 | `GET /api/olaylar?son=N` | SSE; son N olayı tekrar oynatır, sonra canlı |
@@ -164,8 +235,12 @@ toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdi
 | `GET /api/token` | bugünkü ajan başına token |
 | `GET /api/sayac` | bugünkü koşu sayısı, aktif ajan, koşu başına süre/usage/maliyet |
 | `GET /api/hafiza` | `hafiza/<ajan>.md` başına madde sayısı ve son 3 madde |
+| `GET /api/telegram` | Telegram bağlantı durumu (token hiç dönmez, yalnız son 4 karakter) |
+| `POST /api/telegram` | `{"islem": "token"\|"kod"\|"rapor_saati"\|"test"\|"kaldir", …}` |
 
 ## Güvenlik notları
+- **Giriş zorunlu.** Statik sayfa ve `/api/oturum`, `/api/kurulum` dışındaki tüm `/api/*` uçları (canlı olay akışı ve
+  Telegram paneli dahil) oturum ister; yoksa 401. Hesap açılınca kurulumun girişsiz adımları kapanır.
 - **Yalnız `127.0.0.1`.** `Host` ve `Origin` başlıkları yalnız localhost/127.0.0.1 kabul edilir (DNS rebinding ve
   başka sitelerden istek atılmasına karşı). Sunucuyu `0.0.0.0`'a açma, ağa yayınlama.
 - **Prompt shell'e string olarak birleşmez.** Komutlar liste argümanıyla kurulur, prompt `claude`'a stdin'den gider.
@@ -183,11 +258,19 @@ toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdi
 ## Dosyalar
 | Dosya | Ne |
 |---|---|
-| `sunucu.py` | HTTP + SSE sunucusu, CEO çağrısı, koşu başlatma |
+| `sunucu.py` | HTTP + SSE sunucusu, giriş kapısı, CEO çağrısı, koşu başlatma (`--sifre-sifirla`) |
+| `hesap.py` | hesap, şifre özeti (scrypt), oturumlar, kaba kuvvet beklemesi |
+| `ajan_yonetimi.py` | `ajanlar.json` üzerinde doğrulanmış ajan/oda ekle-düzenle-sil, şablondan ekleme |
+| `sablonlar/` | sektör şablonları (`<id>.json`) |
 | `kosucu.py` | tek ajan koşusu (tmux penceresinde) |
 | `kopru.py` | terminal köprüsü (salt okuma) |
 | `token_sayac.py` | günlük token sayacı |
-| `ortak.py` | yollar, ajan tablosu, olay günlüğü |
+| `ortak.py` | yollar, ajan tablosu, olay günlüğü, `.env` okuma/yazma |
+| `telegram_kopru.py` | Telegram botu: long polling, yönlendirme, eşleştirme, gün sonu raporu, panel |
+| `akis.py` | olay izleyici: ajan soruları için CEO triyajı, aksilik/sonuç bildirimleri |
+| `sorular.py` | sorular, CEO kararları, Telegram mesaj eşlemesi, devam kuyruğu (`durum/` altında) |
+| `test_ofis.py` | bağımlılıksız self-check: `python test_ofis.py` |
+| `.env.example` | Telegram ayarları şablonu (panel kullanılıyorsa gerekmez) |
 | `ajanlar.example.json`, `kopru.example.json` | boş şablonlar |
 | `CLAUDE.md` | CEO anayasası şablonu |
 | `on-yuz/` | `index.html` (sahne + paneller), `kedi.js` (prosedürel kedi), `meme.js` (meme pozları), `portre.js` (panel avatarları), `dekor.js` (oda eşyaları), `demo-veri.json` |
@@ -211,8 +294,11 @@ and goes back to sleep. Nothing runs while idle: **0 tokens**.
 
 - **Try it without connecting anything:** `cd on-yuz && python3 -m http.server 8000`, open
   `http://127.0.0.1:8000/?demo=1`. Demo mode makes no backend requests.
-- **Connect your own agents:** `cp ajanlar.example.json ajanlar.json`, set each agent's `cwd` and preset prompts,
-  run `python3 sunucu.py` (stdlib only, binds to `127.0.0.1:8796`), open it in the browser.
+- **Set up:** run `python3 sunucu.py` (stdlib only, binds to `127.0.0.1:8796`) and open it in the browser. A setup
+  wizard asks your name, creates your account (scrypt-hashed password, HttpOnly session cookie, every API behind
+  login) and lets you start empty or from a sector template (software, influencer, digital marketing, e-commerce,
+  small-business front office, online course, consulting). Add, edit and remove agents and rooms later in the
+  **Ajanlar** tab. Forgot the password: `python3 sunucu.py --sifre-sifirla`.
 - **Architecture:** this folder is the "CEO" (main config). Every agent is a project folder (`cwd`). Office runs use
   `claude -p` in a tmux window, prompt via stdin, events streamed to the UI over SSE. The CEO is a single tool-less
   `claude -p --json-schema` call whose JSON plan is validated before anything starts.

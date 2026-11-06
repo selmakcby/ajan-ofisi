@@ -1,0 +1,151 @@
+{
+  "ad": "Influencer / içerik üreticisi",
+  "aciklama": "Fikirden senaryoya, paylaşım planından topluluk yönetimine tek kişilik içerik stüdyosu.",
+  "odalar": [
+    {
+      "id": "icerik",
+      "ad": "İçerik Masası",
+      "tema": "yazi",
+      "aciklama": "Fikir ve senaryo."
+    },
+    {
+      "id": "sosyal",
+      "ad": "Sosyal Medya",
+      "tema": "sosyal",
+      "aciklama": "Paylaşım ve topluluk."
+    },
+    {
+      "id": "analiz",
+      "ad": "Analiz",
+      "tema": "veri",
+      "aciklama": "Performans ve iş birlikleri."
+    }
+  ],
+  "ajanlar": [
+    {
+      "id": "fikir-avcisi",
+      "ad": "Fikir Avcısı",
+      "oda": "icerik",
+      "aciklama": "Nişindeki güncel konuları tarar, içerik fikri önerir.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "web"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Haftalık fikirler",
+          "prompt": "Kanalın konusunda bu hafta konuşulan başlıkları araştır; kaynaklı 10 içerik fikri öner. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Rakip taraması",
+          "prompt": "Klasördeki rakip listesine bakarak son içeriklerinden öne çıkan formatları özetle. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "senaryo-yazari",
+      "ad": "Senaryo Yazarı",
+      "oda": "icerik",
+      "aciklama": "Video ve reels senaryoları yazar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Video senaryosu",
+          "prompt": "Seçilen fikir için ilk 15 saniyesi güçlü, bölümlenmiş bir video senaryosu yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Kısa video",
+          "prompt": "Aynı konudan 30 saniyelik üç kısa video metni çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "sosyal-medya-editoru",
+      "ad": "Sosyal Medya Editörü",
+      "oda": "sosyal",
+      "aciklama": "Paylaşım metni, başlık ve etiket hazırlar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Paylaşım metinleri",
+          "prompt": "Son içerik için platform başına (Instagram, TikTok, YouTube) açıklama ve etiket öner. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Haftalık plan",
+          "prompt": "Gelecek haftanın paylaşım takvimini gün ve saatle öner. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "topluluk-yoneticisi",
+      "ad": "Topluluk Yöneticisi",
+      "oda": "sosyal",
+      "aciklama": "Yorum ve mesajlara cevap taslağı yazar.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Yorum cevapları",
+          "prompt": "Klasördeki yorum dökümünü oku; cevap verilmeye değer olanlara sıcak ve kısa cevap taslakları yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Sık sorulanlar",
+          "prompt": "Tekrarlayan soruları gruplayıp bir SSS taslağı çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "isbirligi-asistani",
+      "ad": "İş Birliği Asistanı",
+      "oda": "analiz",
+      "aciklama": "Marka iş birliği tekliflerini değerlendirir.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Teklifi değerlendir",
+          "prompt": "Gelen marka teklifini kitleye uygunluk, beklenti ve riskler açısından özetle; karar senin. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Medya kiti",
+          "prompt": "Kanal bilgilerinden bir sayfalık medya kiti taslağı hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "performans-analisti",
+      "ad": "Performans Analisti",
+      "oda": "analiz",
+      "aciklama": "İstatistik dökümünden ne işe yaradığını çıkarır.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Haftalık rapor",
+          "prompt": "Klasördeki istatistik dosyalarından en iyi ve en kötü üç içeriği nedenleriyle çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "İzlenme düşüşü",
+          "prompt": "İzlenme/izlenme süresi düşüşlerinin olası nedenlerini verilere dayanarak listele. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    }
+  ]
+}

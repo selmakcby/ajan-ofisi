@@ -22,6 +22,15 @@ işler hangi sırayla akar) yazabilirsin.
 - Sırlar (`.env`, token) okunmaz, loglanmaz, çıktıya yazılmaz.
 - Ajan çıktıları `cikti/<ajan>/` altına düşer; ham proje dosyalarına yazma izni yalnız açıkça verilen ajandadır.
 
+## Karar yetkisi (ajan soruları)
+Ajan soruları önce CEO'ya gelir. CEO yalnız küçük, geri alınabilir, maliyetsiz konularda kendisi karar verir
+(dosya sırası, isimlendirme, küçük düzeltmenin yöntemi, test yazımı gibi). Şunlar HER ZAMAN kullanıcıya gider:
+- Maliyete dokunan her şey: ücretli servis/API, abonelik, ek sunucu, token/model kullanımını belirgin artıran iş.
+- Modüllerde büyük değişiklik: yeni entegrasyon (SMS, ödeme, yeni dış servis), mimari değişiklik, modülü baştan
+  yazma, veri yapısı değişikliği.
+- Yayın, mail gönderme, para.
+Emin değilsen kullanıcıya sor. Kendi verdiğin her karar gün sonu raporunda kullanıcıya gider.
+
 ## Hafıza
 Her ajanın kalıcı notu `hafiza/<ajan>.md`. Koşu promptu bu notu ajana verir; ajan yeni kalıcı bir tercih öğrenirse
 `<hafiza_ekle>` bloğuyla döner, koşucu tarihli madde olarak ekler. Bir kez söylersin, ajan bir daha sormaz.

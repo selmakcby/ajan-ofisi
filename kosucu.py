@@ -22,6 +22,10 @@ import token_sayac  # noqa: E402
 YALIN_DIZIN = os.path.join(ortak.KOK, "durum", "yalin-cwd")
 BEKLEME_SN = int(os.environ.get("OFIS_PENCERE_BEKLE", "90"))
 HAFIZA_DESENI = re.compile(r"<hafiza_ekle>(.*?)</hafiza_ekle>", re.S)
+# Esnek: tek/çift/tırnaksız tur, büyük harf, kapanmamış blok (çıktı kesildiyse) da soru sayılır.
+SORU_DESENI = re.compile(r"<soru\b([^>]*)>(.*?)(?:</soru\s*>|\Z)", re.S | re.I)
+TUR_DESENI = re.compile(r"tur\s*=\s*[\"']?([\w-]+)", re.I)
+SORU_TURLERI = ("maliyet", "buyuk-degisiklik", "yayin-mail-para", "diger")
 
 GOREV_SABLONU = """Sen Ajan Ofisi'nde "{ad}" ajanısın (oda: {oda}). Bugün {bugun}.
 
@@ -45,7 +49,33 @@ Aşağıdakiler kullanıcının sana daha önce söylediği tercih ve revizeler.
 Cevabın kısa olsun (en fazla ~15 satır), her iddiaya dosya yolu ver.
 Bu koşuda kullanıcının tercihine dair KALICI yeni bir şey öğrendiysen (revize, kural, beğeni/ret) en sona
 <hafiza_ekle>tek satırlık madde</hafiza_ekle> yaz. Öğrenmediysen bu bloğu yazma.
+Kullanıcının kararı gereken bir noktaya geldiysen (onay, seçim, belirsizlik) işi orada bırak ve en sona
+<soru tur="maliyet|buyuk-degisiklik|yayin-mail-para|diger">tek, açık soru</soru> yaz. tur: para/ücretli servis/
+token artışı → maliyet; yeni entegrasyon, mimari ya da modül değişikliği → buyuk-degisiklik; yayın, mail, ödeme →
+yayin-mail-para; diğerleri → diger. Soru yoksa bu bloğu yazma.
 """
+
+DEVAM_SABLONU = """Kullanıcının/CEO'nun sorduğun soruya cevabı aşağıda. Bu cevaba göre işine kaldığın yerden devam et.
+<cevap kaynak="{kaynak}">
+{cevap}
+</cevap>
+Bitiriş kuralları aynı: kısa cevap, gerekirse yeni <soru> ya da <hafiza_ekle>.
+"""
+
+
+def soru_ayikla(metin):
+    """<soru tur="..."> bloğu → {"soru", "tur"}; yoksa None. Geçersiz/eksik tur ya da birden çok blok → tur "eksik"."""
+    bloklar = SORU_DESENI.findall(metin or "")
+    if not bloklar:
+        return None
+    e = TUR_DESENI.search(bloklar[0][0]) if len(bloklar) == 1 else None
+    tur = e.group(1).lower() if e and e.group(1).lower() in SORU_TURLERI else "eksik"
+    soru = "\n".join(s.strip() for _, s in bloklar if s.strip())
+    return {"soru": soru, "tur": tur if soru else "eksik"}
+
+
+def soru_temizle(metin):
+    return SORU_DESENI.sub("", metin or "").strip()
 
 
 def hafiza_oku(ajan_id):
@@ -68,10 +98,13 @@ def hafizaya_ekle(ajan_id, metin):
     return maddeler
 
 
-def komut_kur(ajan, genel_yasak, cikti_dizini):
+def komut_kur(ajan, genel_yasak, cikti_dizini, devam_session=None):
     claude = shutil.which("claude") or "/opt/homebrew/bin/claude"
+    # Oturum saklanır: ajan soru sorarsa cevapla aynı oturum --resume ile sürdürülür.
     komut = [claude, "-p", "--model", ajan["model"], "--output-format", "stream-json",
-             "--verbose", "--no-session-persistence", "--add-dir", cikti_dizini]
+             "--verbose", "--add-dir", cikti_dizini]
+    if devam_session:
+        komut += ["--resume", devam_session]
     if ajan.get("yalin"):
         # Yalın koşu: genel CLAUDE.md/rules/hafıza/MCP yüklenmez; ajan klasörü --add-dir ile okunur.
         # Küçük, sık koşan ajanlarda bağlamı (ve token'ı) belirgin biçimde azaltır.
@@ -135,9 +168,14 @@ def kos(arg_dosyasi):
     os.makedirs(cikti_dizini, exist_ok=True)
 
     gorev = arg["prompt"].replace("{bugun}", ortak.bugun())
-    tam_prompt = GOREV_SABLONU.format(ad=ajan["ad"], oda=ajan["oda"], bugun=ortak.bugun(),
-                                      hafiza=hafiza_oku(ajan["id"]), gorev=gorev)
-    komut = komut_kur(ajan, veri.get("varsayilan_yasak_araclar", []), cikti_dizini)
+    devam = arg.get("devam") or {}
+    if devam.get("session_id"):
+        # Sürdürme: şablon ve hafıza önceki koşuda verildi; yalnız cevap gider.
+        tam_prompt = DEVAM_SABLONU.format(kaynak=devam.get("cevap_kaynak") or "kullanici", cevap=devam["cevap"])
+    else:
+        tam_prompt = GOREV_SABLONU.format(ad=ajan["ad"], oda=ajan["oda"], bugun=ortak.bugun(),
+                                          hafiza=hafiza_oku(ajan["id"]), gorev=gorev)
+    komut = komut_kur(ajan, ortak.yasakli_araclar(veri), cikti_dizini, devam.get("session_id"))
 
     baslangic = time.time()
     ortak.durum_yaz(ajan["id"], {"durum": "calisiyor", "kosu_id": kosu_id, "pid": os.getpid(),
@@ -155,6 +193,7 @@ def kos(arg_dosyasi):
             os.makedirs(calisma_dizini, exist_ok=True)
             surec = subprocess.Popen(komut, cwd=calisma_dizini, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     env=ortak.alt_surec_ortami(),  # Telegram token'ı ajana sızmasın
                                      encoding="utf-8", errors="replace")  # Windows yerel kodlaması cp1254 olabilir
             surec.stdin.write(tam_prompt)
             surec.stdin.close()
@@ -177,7 +216,7 @@ def kos(arg_dosyasi):
         token_kesinle(baglam, sonuc, sayac)
     except (OSError, ValueError) as e:  # sayaç hatası koşuyu düşürmez
         print(f"(token sayacı yazılamadı: {type(e).__name__})", flush=True)
-    bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini)
+    bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini, kaynak=arg.get("kaynak"))
 
 
 def token_kesinle(baglam, sonuc, sayac):
@@ -191,16 +230,20 @@ def token_kesinle(baglam, sonuc, sayac):
                     "ajan_gun": ajan_gun})
 
 
-def bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini):
+def bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini, kaynak=None):
     sure = round(time.time() - baslangic, 1)
     metin = (sonuc or {}).get("result") or ""
     basarili = bool(sonuc) and not sonuc.get("is_error") and not hata
     eklenen = hafizaya_ekle(ajan["id"], metin) if basarili else []
-    temiz = HAFIZA_DESENI.sub("", metin).strip()
+    soru = soru_ayikla(metin) if basarili else None
+    temiz = soru_temizle(HAFIZA_DESENI.sub("", metin))
+    session_id = (sonuc or {}).get("session_id")
     cikti_yolu = os.path.join(cikti_dizini, f"{baglam['kosu_id']}.md")
     with open(cikti_yolu, "w", encoding="utf-8") as f:
-        f.write(temiz or f"(çıktı yok) {hata or ''}")
+        f.write((temiz or f"(çıktı yok) {hata or ''}") + (f"\n\n**Soru:** {soru['soru']}" if soru else ""))
     olay = {
+        "session_id": session_id, "kaynak": kaynak,
+        "soru": soru["soru"] if soru else None, "soru_tur": soru["tur"] if soru else None,
         **baglam, "tur": "kosu_bitti", "durum": "basarili" if basarili else "hata",
         "sure_sn": sure, "ozet": temiz[:400], "hata": hata,
         "kullanim": (sonuc or {}).get("usage"),
@@ -211,11 +254,14 @@ def bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini):
         "log": os.path.relpath(log_yolu, ortak.KOK),
         "cikti": os.path.relpath(cikti_yolu, ortak.KOK),
     }
-    ortak.olay_yaz(olay)
-    ortak.durum_yaz(ajan["id"], {"durum": "bitti" if basarili else "hata", "kosu_id": baglam["kosu_id"],
+    # Önce durum, sonra olay: izleyici kosu_bitti'yi gördüğünde ajan artık meşgul görünmemeli.
+    durum = "cevap_bekliyor" if soru else ("bitti" if basarili else "hata")
+    ortak.durum_yaz(ajan["id"], {"durum": durum, "kosu_id": baglam["kosu_id"],
                                  "pid": None, "bitis": ortak.simdi_iso(), "bitis_ts": time.time(),
                                  "sure_sn": sure, "ozet": temiz[:400], "hata": hata,
-                                 "maliyet_usd": olay["maliyet_usd"], "cikti": olay["cikti"]})
+                                 "maliyet_usd": olay["maliyet_usd"], "cikti": olay["cikti"],
+                                 "session_id": session_id, "soru": olay["soru"], "soru_tur": olay["soru_tur"]})
+    ortak.olay_yaz(olay)
     print(f"\n■ bitti · {sure} sn · maliyet_usd={olay['maliyet_usd']} · {olay['cikti']}", flush=True)
     if eklenen:
         print(f"  hafızaya eklendi: {eklenen}", flush=True)

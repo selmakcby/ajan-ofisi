@@ -1,0 +1,157 @@
+{
+  "ad": "Dijital pazarlama ajansı",
+  "aciklama": "Strateji, SEO, reklam metni, sosyal medya ve kampanya raporlamasıyla küçük bir ajans.",
+  "odalar": [
+    {
+      "id": "strateji",
+      "ad": "Strateji",
+      "tema": "arastirma",
+      "aciklama": "Pazar ve kanal stratejisi."
+    },
+    {
+      "id": "kreatif",
+      "ad": "Kreatif",
+      "tema": "tasarim",
+      "aciklama": "Metin ve içerik üretimi."
+    },
+    {
+      "id": "performans",
+      "ad": "Performans",
+      "tema": "veri",
+      "aciklama": "Reklam ve kampanya ölçümü."
+    },
+    {
+      "id": "musteri",
+      "ad": "Müşteri İlişkileri",
+      "tema": "posta",
+      "aciklama": "Raporlar ve yazışmalar."
+    }
+  ],
+  "ajanlar": [
+    {
+      "id": "pazarlama-stratejisti",
+      "ad": "Pazarlama Stratejisti",
+      "oda": "strateji",
+      "aciklama": "Hedef kitle ve kanal planı çıkarır.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "web"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Kampanya stratejisi",
+          "prompt": "Müşteri brifine göre hedef kitle, mesaj ve kanal karmasını öneren bir strateji taslağı yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Rakip analizi",
+          "prompt": "Klasördeki rakip listesini araştır; konumlandırma ve mesaj farklarını tabloya dök. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "seo-uzmani",
+      "ad": "SEO Uzmanı",
+      "oda": "strateji",
+      "aciklama": "Anahtar kelime ve sayfa içi SEO önerir.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "web"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Anahtar kelime planı",
+          "prompt": "Müşterinin sektörü için arama niyetine göre gruplanmış anahtar kelime listesi çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Sayfa denetimi",
+          "prompt": "Klasördeki sayfa metinlerini başlık, meta açıklama ve iç bağlantı açısından denetle. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "reklam-metin-yazari",
+      "ad": "Reklam Metin Yazarı",
+      "oda": "kreatif",
+      "aciklama": "Reklam ve açılış sayfası metinleri yazar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Reklam varyasyonları",
+          "prompt": "Kampanya için 5 başlık ve 5 açıklama varyasyonu yaz; karakter sınırlarını gözet. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Açılış sayfası",
+          "prompt": "Teklif için başlık, fayda maddeleri ve çağrı içeren bir açılış sayfası metni yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "sosyal-medya-planlayici",
+      "ad": "Sosyal Medya Planlayıcı",
+      "oda": "kreatif",
+      "aciklama": "İçerik takvimi ve paylaşım metinleri hazırlar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Aylık takvim",
+          "prompt": "Müşteri için bir aylık sosyal medya içerik takvimi hazırla. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Paylaşım metinleri",
+          "prompt": "Takvimdeki bu haftanın paylaşımları için metin ve görsel brifi yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "kampanya-analisti",
+      "ad": "Kampanya Analisti",
+      "oda": "performans",
+      "aciklama": "Reklam verisinden performans çıkarır.",
+      "model": "haiku",
+      "yetkiler": [
+        "okuma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Performans özeti",
+          "prompt": "Klasördeki reklam dökümünden harcama, dönüşüm ve maliyet eğilimlerini özetle. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Optimizasyon önerileri",
+          "prompt": "Düşük performanslı reklam gruplarını ve olası düzeltmeleri listele; bütçe kararı kullanıcının. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    },
+    {
+      "id": "musteri-raporlayici",
+      "ad": "Müşteri Raporlayıcı",
+      "oda": "musteri",
+      "aciklama": "Müşteriye gidecek dönem raporunu yazar.",
+      "model": "sonnet",
+      "yetkiler": [
+        "okuma",
+        "yazma"
+      ],
+      "hazir_gorevler": [
+        {
+          "etiket": "Aylık rapor",
+          "prompt": "Analiz notlarından müşteriye sade dilde bir aylık rapor taslağı yaz. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        },
+        {
+          "etiket": "Toplantı özeti",
+          "prompt": "Toplantı notlarından aksiyon maddeli kısa bir özet çıkar. Sonucu taslak olarak yaz; yayınlama, gönderme, ödeme yapma."
+        }
+      ]
+    }
+  ]
+}

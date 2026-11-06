@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 
 if sys.platform == "win32":
@@ -41,14 +42,46 @@ class YapilandirmaHatasi(Exception):
     pass
 
 
+VARSAYILAN_YASAK = ["Read(**/.env)", "Read(**/.env.*)", "Read(~/.env)", "Bash(rm:*)", "Bash(git push:*)",
+                    "Bash(curl:*)", "Bash(open:*)"]
+
+
+def en_kucuk_yapilandirma():
+    """İlk açılışta (ajanlar.json yokken) yazılan yapılandırma: yalnız CEO. Gerisi kurulum sihirbazından gelir."""
+    return {
+        "surum": 2,
+        "ayarlar": {"kullanici": "", "marka": "Ajan Ofisi"},
+        "odalar": [],
+        "varsayilan_yasak_araclar": list(VARSAYILAN_YASAK),
+        "ajanlar": [{
+            "id": "ceo", "ad": "CEO", "oda": "ceo", "cwd": ".", "model": "sonnet", "ne_zaman": "istek",
+            "ne_zaman_metin": "Sen konuşunca",
+            "aciklama": "Yalnız onunla konuşursun; işi ajanlara dağıtır. Araçsız, yalnız plan çıkarır.",
+            "izinli_araclar": [], "hazir_gorevler": [],
+        }],
+    }
+
+
+def yasakli_araclar(veri):
+    """Varsayılan yasaklar her zaman; dosyadakiler onlara eklenir (sıra korunur, tekrar yok)."""
+    return list(dict.fromkeys([*VARSAYILAN_YASAK, *(veri.get("varsayilan_yasak_araclar") or [])]))
+
+
+def cwd_coz(cwd):
+    """Göreli çalışma klasörü ofis klasörüne (KOK) göre çözülür; boş kalır (kurulmamış)."""
+    if not cwd:
+        return ""
+    yol = os.path.expanduser(cwd)
+    return os.path.normpath(yol if os.path.isabs(yol) else os.path.join(KOK, yol))
+
+
 def ajanlari_yukle():
     try:
         with open(AJANLAR_DOSYASI, encoding="utf-8") as f:
             veri = json.load(f)
-    except FileNotFoundError as e:
-        raise YapilandirmaHatasi(
-            f"{os.path.basename(AJANLAR_DOSYASI)} yok. Önce: cp ajanlar.example.json ajanlar.json"
-        ) from e
+    except FileNotFoundError:
+        veri = en_kucuk_yapilandirma()
+        atomik_yaz(AJANLAR_DOSYASI, json.dumps(veri, ensure_ascii=False, indent=2))
     if not isinstance(veri, dict) or not isinstance(veri.get("ajanlar"), list):
         raise YapilandirmaHatasi("ajanlar.json içinde 'ajanlar' listesi olmalı")
     tablo = {}
@@ -58,12 +91,12 @@ def ajanlari_yukle():
         oda = ajan.get("oda") or "genel"
         if not isinstance(oda, str) or not ODA_ID_DESENI.fullmatch(oda):
             raise ValueError(f"geçersiz oda id: {oda!r} (ajan {ajan['id']})")
-        kurulu = os.path.isdir(os.path.expanduser(ajan.get("cwd") or ""))
+        cwd = cwd_coz(ajan.get("cwd"))
         tablo[ajan["id"]] = {
             **ajan,
             "oda": oda,
-            "cwd": os.path.expanduser(ajan.get("cwd") or ""),
-            "kurulu": kurulu,
+            "cwd": cwd,
+            "kurulu": bool(cwd) and os.path.isdir(cwd),
         }
     return veri, tablo
 
@@ -121,11 +154,29 @@ def durum_oku(ajan_id):
         return None
 
 
-def durum_yaz(ajan_id, durum):
-    gecici = durum_yolu(ajan_id) + ".tmp"
+def atomik_yaz(yol, metin, izin=None):
+    """Geçici dosyaya yazıp yerine koyar. Windows'ta hedef başka bir iş parçacığı/süreçte açıkken os.replace
+    PermissionError verir: kısa aralıklarla yeniden denenir. Geçici ad süreç/iş parçacığına özgüdür."""
+    gecici = f"{yol}.{os.getpid()}.{threading.get_ident()}.tmp"
     with open(gecici, "w", encoding="utf-8") as f:
-        json.dump(durum, f, ensure_ascii=False, indent=1)
-    os.replace(gecici, durum_yolu(ajan_id))
+        f.write(metin)
+    if izin is not None:
+        os.chmod(gecici, izin)
+    for deneme in range(20):
+        try:
+            os.replace(gecici, yol)
+            return
+        except PermissionError:
+            if deneme == 19:
+                try:
+                    os.remove(gecici)
+                finally:
+                    raise
+            time.sleep(0.05)
+
+
+def durum_yaz(ajan_id, durum):
+    atomik_yaz(durum_yolu(ajan_id), json.dumps(durum, ensure_ascii=False, indent=1))
 
 
 def surec_yasiyor(pid):
@@ -174,3 +225,73 @@ def ajan_mesgul(ajan_id):
     if surec_yasiyor(d.get("pid")):
         return True
     return d.get("durum") == "basliyor" and time.time() - d.get("baslangic_ts", 0) < 30
+
+
+# ---------- .env ve Telegram ayarı ----------
+# .env repoya girmez (.gitignore) ve ajanların okuması varsayilan_yasak_araclar ile yasaktır.
+ENV_DOSYASI = os.path.join(KOK, ".env")
+ENV_SATIRI = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
+SAAT_DESENI = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+ENV_IZIN = 0o600  # .env yalnız sahibi okuyabilsin (paylaşılan Linux/macOS makineleri)
+
+
+def alt_surec_ortami():
+    """Ajan/claude süreçlerine verilecek ortam: Telegram ayarları (token) çıkarılır."""
+    return {k: v for k, v in os.environ.items() if not k.startswith("OFIS_TELEGRAM_")}
+
+
+def env_oku(yol=None):
+    """ANAHTAR=deger satırlarını okur; # ve boş satırlar atlanır, tırnaklar soyulur. Dosya yoksa {}."""
+    try:
+        with open(yol or ENV_DOSYASI, encoding="utf-8") as f:
+            satirlar = f.read().splitlines()
+    except FileNotFoundError:
+        return {}
+    sonuc = {}
+    for satir in satirlar:
+        e = ENV_SATIRI.match(satir)
+        if not e or satir.lstrip().startswith("#"):
+            continue
+        deger = e.group(2).strip()
+        if len(deger) >= 2 and deger[0] == deger[-1] and deger[0] in "\"'":
+            deger = deger[1:-1]
+        sonuc[e.group(1)] = deger
+    return sonuc
+
+
+def env_yaz(guncel, yol=None):
+    """Verilen anahtarları günceller (yoksa sona ekler), None olanları siler; diğer satırlar aynen kalır."""
+    yol = yol or ENV_DOSYASI
+    try:
+        with open(yol, encoding="utf-8") as f:
+            satirlar = f.read().splitlines()
+    except FileNotFoundError:
+        satirlar = []
+    kalan = dict(guncel)
+    yeni = []
+    for satir in satirlar:
+        e = ENV_SATIRI.match(satir)
+        if e and not satir.lstrip().startswith("#") and e.group(1) in guncel:
+            deger = kalan.pop(e.group(1), None)
+            if deger is not None:
+                yeni.append(f"{e.group(1)}={deger}")
+            continue  # silinen ya da aynı anahtarın tekrarı
+        yeni.append(satir)
+    yeni += [f"{k}={v}" for k, v in kalan.items() if v is not None]
+    atomik_yaz(yol, "\n".join(yeni) + "\n", ENV_IZIN)
+
+
+def telegram_ayari(yol=None):
+    """{"token", "kullanici": int|None, "rapor_saati": (saat, dakika)}; token yoksa None. Ortam değişkeni .env'i ezer."""
+    env = env_oku(yol)
+    al = lambda k: (os.environ.get(k) or env.get(k) or "").strip()  # noqa: E731
+    token = al("OFIS_TELEGRAM_TOKEN")
+    if not token:
+        return None
+    kullanici = al("OFIS_TELEGRAM_KULLANICI")
+    saat = SAAT_DESENI.match(al("OFIS_TELEGRAM_RAPOR_SAATI"))
+    return {
+        "token": token,
+        "kullanici": int(kullanici) if kullanici.isdigit() else None,
+        "rapor_saati": (int(saat.group(1)), int(saat.group(2))) if saat else (18, 0),
+    }
