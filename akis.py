@@ -23,6 +23,7 @@ TELEGRAM_KAYNAKLARI = ("telegram", "telegram-ceo")
 ARALIK_SN = 1.0
 PERIYOT_SN = 30  # 1 saat kuralı ve toplantı zamanlayıcısı bu aralıkla bakılır
 ZAMAN_ASIMI_SN = 3600
+BAYAT_SN = 24 * 3600  # bundan eski sorular (ör. sürüm yükseltmeden kalma) otomatik cevaplanmaz, kullanıcıyı bekler
 GUVENLI_CEVAP = ("Kullanıcı 1 saat içinde cevap vermedi. Güvenli taraf: para harcatan, ücretli servis ekleyen, "
                  "büyük değişiklik ya da yeni entegrasyon gerektiren, yayın/mail/ödeme yapan yolu SEÇME. Bu kısmı "
                  "yapmadan, ücretsiz ve geri alınabilir yolla işin geri kalanına devam et; atladığın kısmı çıktında "
@@ -135,6 +136,8 @@ class Izleyici:
         if session_id:
             (sorular.otomatik_sifirla if kullanici else sorular.otomatik_artir)(session_id)
         run_kaynak = "telegram" if telegram else "arayuz"
+        if not session_id and not kullanici:
+            return "Sürdürülecek oturum yok; ajan başlatılmadı."  # bağlamsız yeni koşu tokensız iş değildir
         if not session_id:  # sürdürülecek oturum yok: aynı ajana yeni görev
             sonuc = self._baslat(ajan, {"prompt": cevap, "kaynak": run_kaynak})
         else:
@@ -253,7 +256,7 @@ class Izleyici:
                 yas = simdi - datetime.fromisoformat(s.get("zaman") or "").timestamp()
             except (TypeError, ValueError):
                 continue
-            if yas < ZAMAN_ASIMI_SN or s.get("kaynak") == "bitti_mi":
+            if yas < ZAMAN_ASIMI_SN or yas > BAYAT_SN or s.get("kaynak") == "bitti_mi":
                 continue  # "bitti mi?" yalnız kullanıcının kararı
             sid, ajan, session_id = s["soru_id"], s.get("ajan"), s.get("session_id")
             if s.get("kaynak") == "toplanti":

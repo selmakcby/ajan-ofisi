@@ -205,5 +205,5 @@ def kullanici_metni(proje):
 
 
 def evet_mi(metin):
-    kelimeler = re.sub(r"[^\w]+", " ", str(metin or "").lower()).split()
+    kelimeler = re.sub(r"[^\w]+", " ", str(metin or "").replace("İ", "i").lower()).split()
     return bool(kelimeler) and all(k in EVET for k in kelimeler)

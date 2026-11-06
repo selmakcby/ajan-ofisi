@@ -291,9 +291,24 @@ def bugunku_kosular(gun):
             continue
         e = eslesme.get(o.get("kosu_id")) or {}
         sonuc.append({"ajan": o.get("ajan"), "durum": o.get("durum"), "ozet": str(o.get("ozet") or "")[:300],
-                      "cikti": str(o.get("cikti") or "")[:500], "kosu_id": o.get("kosu_id"),
+                      "cikti": _cikti_metni(o.get("cikti")), "kosu_id": o.get("kosu_id"),
                       "proje_id": e.get("proje_id"), "gorev_id": e.get("gorev_id")})
     return sonuc
+
+
+def _cikti_metni(goreli):
+    """kosu_bitti'deki çıktı yolu (VERI'ye göre) → dosyanın ilk 500 karakteri. Veri klasörü dışı okunmaz."""
+    if not isinstance(goreli, str) or not goreli:
+        return ""
+    kok = os.path.realpath(ortak.VERI)
+    yol = os.path.realpath(os.path.join(kok, goreli))
+    if not yol.startswith(kok + os.sep):
+        return ""
+    try:
+        with open(yol, encoding="utf-8", errors="replace") as f:
+            return f.read(500)
+    except OSError:
+        return ""
 
 
 def _arka(islev, *arg):
@@ -318,6 +333,7 @@ class Toplanti:
         self.ofis_durumu = ofis_durumu
         self.mesgul_mu = mesgul_mu
         self.arka = arka or _arka
+        self._suren = False  # CEO çağrısı sürerken (aktif henüz yazılmadı) ikinci toplantı başlamasın
 
     def tik(self, simdi=None):
         """İzleyici döngüsünden 30 sn'de bir çağrılır. Açık proje yoksa model çağrısı yapılmaz."""
@@ -334,11 +350,20 @@ class Toplanti:
             if tur:
                 d["son"][tur] = bugun  # önce işaret: çökse ya da yeniden başlasa da bugün tekrar yapılmaz
             return tur
+        if self._suren:
+            return
         tur = degistir(isaretle)
         if tur:
+            self._suren = True
             self.arka(self.yap, tur, bugun)
 
     def yap(self, tur, gun=None):
+        try:
+            self._yap(tur, gun)
+        finally:
+            self._suren = False
+
+    def _yap(self, tur, gun=None):
         if not projeler.acik_projeler():
             return
         gun = gun or datetime.now().date().isoformat()
@@ -444,6 +469,8 @@ class Toplanti:
 
     def _atama_baslat(self, x):
         """→ "basladi" | "kuyruk" | hata metni. Meşgul ajanın ataması bekleyenlere yazılır."""
+        if (projeler.al(x.get("proje_id")) or {}).get("durum") != "acik":
+            return "proje artık açık değil; iş başlatılmadı"
         try:
             b = self.gorev_baslat(x["ajan"], prompt=x["prompt"], kaynak="toplanti")
         except Exception as e:  # noqa: BLE001 — IstekHatasi dahil

@@ -867,9 +867,11 @@ def proje_islem(veri):
                 raise ValueError("Açıklama metin olmalı ve çok uzun olmamalı.")
             soru = next((s for s in sorular.bekleyen_sorular()
                          if s.get("kaynak") == "bitti_mi" and s.get("proje_id") == pid), None)
-            if soru:
+            if soru and islem == "onayla":
                 return {"mesaj": IZLEYICI.soru_cevapla(soru["soru_id"], metin, "kullanici-web"),
                         "proje": projeler.al(pid)}
+            if soru:  # "Hayır" tuşu: yazılan metin ne olursa olsun kapatmaz
+                sorular.cevap_kilitle(soru["soru_id"], metin, "kullanici-web")
             return {"proje": projeler.onayla(pid) if islem == "onayla" else projeler.reddet(pid, metin)}
         if islem == "saatler":
             return {"saatler": toplanti.saatler_ayarla(veri.get("sabah"), veri.get("aksam"))}

@@ -1809,7 +1809,7 @@ def test_zaman_asimi_diger_ceo_cevaplar_hata_guvenli(tmp):
                        zaman_asimi_cevabi=lambda ajan, soru, baglam: gelen.append(ajan) or cevaplar.pop(0))
     _eski_soru("d1", "diger")
     _eski_soru("d2", "diger")
-    iz.zaman_asimi_isle(2e9)
+    iz.zaman_asimi_isle(datetime_ts("2026-11-06T09:30:00+03:00"))
     assert [c["devam"]["cevap"] for c in cagri] == ["mavi olsun", akis.GUVENLI_CEVAP] and gelen == ["yazar", "yazar"]
 
 
@@ -1828,8 +1828,8 @@ def test_zaman_asimi_sinir_ve_istisnalar(tmp):
     _eski_soru("t1", "diger", ajan="ceo", session_id=None, kaynak="toplanti", proje_id=p["id"])
     _eski_soru("bozuk", "diger")
     sorular.soru_guncelle("bozuk", zaman="dün")
-    iz.zaman_asimi_isle(2e9)
-    iz.zaman_asimi_isle(2e9)
+    iz.zaman_asimi_isle(datetime_ts("2026-11-06T09:30:00+03:00"))
+    iz.zaman_asimi_isle(datetime_ts("2026-11-06T09:30:00+03:00"))
     assert cagri == [] and sum(m.startswith("⏸") for m in mesaj) == 1
     assert sorular.soru_al("s1")["durum"] == "kullanicida" and sorular.soru_al("b1")["durum"] == "kullanicida"
     assert sorular.soru_al("t1")["durum"] == "cevaplandi" and sorular.soru_al("bozuk")["durum"] == "kullanicida"
@@ -2074,11 +2074,13 @@ def test_aksam_bitti_mi_ve_kapali_proje(tmp):
 def test_bekleyen_atama_sira_ve_silinen_ajan(tmp):
     import sorular
     import toplanti
+    import projeler
+    px = projeler.ekle("Site")["id"]
     mesgul = {"yazar"}
     t, basla, mesaj = _toplanti_kur(tmp, _SahteCeo(), mesgul=lambda a: a in mesgul)
     d = toplanti.durum()
-    d["bekleyen_atamalar"] = {"yazar": {"ajan": "yazar", "prompt": "yaz", "proje_id": "p-x", "gorev_id": None},
-                              "silinmis": {"ajan": "silinmis", "prompt": "x", "proje_id": "p-x", "gorev_id": None}}
+    d["bekleyen_atamalar"] = {"yazar": {"ajan": "yazar", "prompt": "yaz", "proje_id": px, "gorev_id": None},
+                              "silinmis": {"ajan": "silinmis", "prompt": "x", "proje_id": px, "gorev_id": None}}
     toplanti.kaydet(d)
     sorular.devam_birak("yazar", {"kaynak": "telegram",
                                   "devam": {"session_id": "s", "cevap": "c", "cevap_kaynak": "kullanici"}})
@@ -2100,7 +2102,7 @@ def test_bekleyen_atama_sira_ve_silinen_ajan(tmp):
     sorular.devam_al("yazar")
     t.tik()
     assert [b[0] for b in basla] == ["yazar"] and toplanti.durum()["bekleyen_atamalar"] == {}
-    assert toplanti.eslesme_bul("k1")["proje_id"] == "p-x"
+    assert toplanti.eslesme_bul("k1")["proje_id"] == px
 
 
 def test_mesgul_ajanin_atamasi_kuyruga(tmp):
@@ -2245,6 +2247,101 @@ def test_toplanti_mantik_node():
     kok = os.path.dirname(os.path.abspath(__file__))
     r = _sp.run([node, os.path.join(kok, "test_toplanti.mjs")], capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0 and "OK" in r.stdout, r.stdout + r.stderr
+
+
+# ---------- Son inceleme düzeltmeleri ----------
+
+def test_kapali_projenin_atamasi_baslamaz(tmp):  # F1
+    import projeler
+    import toplanti
+    p = projeler.ekle("Site")
+    t, basla, mesaj = _toplanti_kur(tmp, _SahteCeo())
+    d = toplanti.durum()
+    d["aktif"] = {"tur": "sabah", "konu": "x", "baslangic": "2026-11-06T09:00:00+03:00",
+                  "bitis": "2000-01-01T00:00:00+00:00", "katilimcilar": ["ceo"], "ozet": "x", "sorular": [],
+                  "bitti_mi": [], "reddedilen": [],
+                  "atamalar": [{"ajan": "yazar", "prompt": "yaz", "proje_id": p["id"], "gorev_id": None}]}
+    d["bekleyen_atamalar"] = {"diger": {"ajan": "diger", "prompt": "x", "proje_id": p["id"], "gorev_id": None}}
+    toplanti.kaydet(d)
+    projeler.kapat(p["id"])
+    t.tik()
+    assert basla == [] and toplanti.durum()["bekleyen_atamalar"] == {}
+
+
+def test_ayni_anda_iki_toplanti_olmaz(tmp):  # F2
+    import projeler
+    import toplanti
+    from datetime import datetime
+    projeler.ekle("Site")
+    bekleyen = []
+    t, _, _ = _toplanti_kur(tmp, _SahteCeo())
+    t.arka = lambda f, *a: bekleyen.append((f, a))   # CEO çağrısı henüz dönmedi
+    toplanti.saatler_ayarla("09:00", "10:00")
+    t.tik(datetime(2026, 11, 6, 10, 30))
+    t.tik(datetime(2026, 11, 6, 10, 31))
+    assert len(bekleyen) == 1
+
+
+def test_oturumsuz_soru_zaman_asiminda_kosu_baslatmaz(tmp):  # F3
+    import akis
+    import sorular
+    cagri, mesaj = [], []
+    iz = akis.Izleyici(lambda a, **k: cagri.append(k) or {}, None, bildir=lambda m, h: mesaj.append(m),
+                       mesgul_mu=lambda a: False)
+    _eski_soru("o1", "maliyet", session_id=None)
+    iz.zaman_asimi_isle(datetime_ts("2026-11-06T09:30:00+03:00"))
+    assert cagri == [] and sorular.soru_al("o1")["durum"] == "cevaplandi" and any(m.startswith("⏱") for m in mesaj)
+
+
+def datetime_ts(iso):
+    from datetime import datetime
+    return datetime.fromisoformat(iso).timestamp()
+
+
+def test_aksam_girdisi_cikti_metni(tmp):  # F4
+    import toplanti
+    os.makedirs(os.path.join(tmp, "cikti", "yazar"))
+    with open(os.path.join(tmp, "cikti", "yazar", "k1.md"), "w", encoding="utf-8") as f:
+        f.write("Taslak hazır: ana sayfa metni." + "x" * 900)
+    with open(ortak.OLAYLAR, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"zaman": "2026-11-06T10:00:00+03:00", "tur": "kosu_bitti", "ajan": "yazar",
+                            "kosu_id": "k1", "cikti": os.path.join("cikti", "yazar", "k1.md")}) + "\n")
+        f.write(json.dumps({"zaman": "2026-11-06T11:00:00+03:00", "tur": "kosu_bitti", "ajan": "yazar",
+                            "kosu_id": "k2", "cikti": "../../etc/passwd"}) + "\n")
+    k = toplanti.bugunku_kosular("2026-11-06")
+    assert k[0]["cikti"].startswith("Taslak hazır") and len(k[0]["cikti"]) == 500
+    assert k[1]["cikti"] == ""                                       # veri klasörü dışı okunmaz
+
+
+def test_bayat_soru_zaman_asimina_girmez(tmp):  # F5
+    import akis
+    import sorular
+    cagri = []
+    iz = akis.Izleyici(lambda a, **k: cagri.append(k) or {}, None, mesgul_mu=lambda a: False)
+    _eski_soru("eski", "diger")
+    iz.zaman_asimi_isle(datetime_ts("2026-11-08T09:00:00+03:00"))   # 2 gün önceki soru
+    assert cagri == [] and sorular.soru_al("eski")["durum"] == "kullanicida"
+
+
+def test_web_hayir_tusu_kapatmaz(tmp):  # F6
+    import projeler
+    import sorular
+    s = _sunucu(tmp)
+    s.giris()
+    try:
+        p = projeler.ekle("Site")
+        projeler.onay_iste(p["id"], "bitti")
+        sorular.soru_ekle("ceo", "b1", None, "bitti mi?", "diger", kaynak="bitti_mi", proje_id=p["id"])
+        sorular.soru_guncelle("b1", durum="kullanicida")
+        assert s.istek("POST", "/api/projeler", {"islem": "reddet", "id": p["id"], "metin": "tamam"})[0] == 200
+        assert projeler.al(p["id"])["durum"] == "acik" and sorular.soru_al("b1")["durum"] == "cevaplandi"
+    finally:
+        s.kapat()
+
+
+def test_evet_mi_buyuk_turkce():  # F7
+    import projeler
+    assert projeler.evet_mi("BİTTİ") and projeler.evet_mi("EVET, BİTTİ!") and projeler.evet_mi("Onaylıyorum")
 
 
 def main():
