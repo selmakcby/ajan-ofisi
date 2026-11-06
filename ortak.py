@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import json
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -84,8 +85,50 @@ def en_kucuk_yapilandirma():
 
 
 def yasakli_araclar(veri):
-    """Varsayılan yasaklar her zaman; dosyadakiler onlara eklenir (sıra korunur, tekrar yok)."""
-    return list(dict.fromkeys([*VARSAYILAN_YASAK, *(veri.get("varsayilan_yasak_araclar") or [])]))
+    """Varsayılan yasaklar her zaman; dosyadakiler onlara eklenir (sıra korunur, tekrar yok). Sunucuda ek yasaklar."""
+    return list(dict.fromkeys([*VARSAYILAN_YASAK, *(veri.get("varsayilan_yasak_araclar") or []),
+                               *(SUNUCU_YASAK if SUNUCU else [])]))
+
+
+# ---------- sunucu modu: kısıtlı ajanlar ----------
+# Serbest Bash yok: kandırılmış bir ajan anahtarı/dosyaları okuyup dışarı sızdıramasın. Yalnız güvenli kalıplar.
+SUNUCU_BASH = ["Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
+               "Bash(ls:*)", "Bash(npm test:*)", "Bash(pytest:*)", "Bash(python -m pytest:*)"]
+SUNUCU_YASAK = ["Bash(env:*)", "Bash(printenv:*)", "Read(/proc/**)"]  # süreç ortamından anahtar okunmasın
+
+
+def sunucu_araclari(izinli):
+    """Serbest "Bash" → güvenli kalıplar; listede olmayan Bash(...) kalıpları düşer; diğer araçlar aynen kalır."""
+    sonuc = []
+    for a in izinli or []:
+        if a == "Bash":
+            sonuc += SUNUCU_BASH
+        elif not a.startswith("Bash(") or a in SUNUCU_BASH:
+            sonuc.append(a)
+    return list(dict.fromkeys(sonuc))
+
+
+def calisma_icinde(cwd):
+    kok = os.path.normcase(os.path.normpath(os.path.join(VERI, "calisma")))
+    return os.path.normcase(os.path.normpath(cwd)).startswith(kok + os.sep)
+
+
+def ajan_klasoru_ac(yol):
+    """Ajanın yazacağı klasör: sunucuda ayrı 'ajan' kullanıcısı da yazabilsin (grup ekip, setgid)."""
+    os.makedirs(yol, exist_ok=True)
+    if SUNUCU:
+        os.chmod(yol, 0o2770)
+
+
+_ARA = object()
+
+
+def kosu_modu(platform=None, tmux_yolu=_ARA):
+    """Ajan koşusu nasıl açılır: Windows → konsol penceresi, tmux varsa → tmux, yoksa (Docker) → arka plan."""
+    if (platform or sys.platform) == "win32":
+        return "konsol"
+    tmux = shutil.which("tmux") if tmux_yolu is _ARA else tmux_yolu
+    return "tmux" if tmux else "arka"
 
 
 def cwd_coz(cwd):
@@ -117,7 +160,8 @@ def ajanlari_yukle():
             **ajan,
             "oda": oda,
             "cwd": cwd,
-            "kurulu": bool(cwd) and os.path.isdir(cwd),
+            # sunucuda ajan yalnız VERI/calisma altında çalışır (CEO araçsız, hariç)
+            "kurulu": bool(cwd) and os.path.isdir(cwd) and (not SUNUCU or ajan["id"] == "ceo" or calisma_icinde(cwd)),
         }
     return veri, tablo
 

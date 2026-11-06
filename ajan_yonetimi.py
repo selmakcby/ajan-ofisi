@@ -196,6 +196,8 @@ def _alanlari_uygula(veri, ajan, alanlar):
             ajan["tetik_kelime"] = t
     if "cwd" in alanlar:
         cwd = _metin(alanlar["cwd"] or "", "Çalışma klasörü", 500)
+        if cwd and ortak.SUNUCU and not ortak.calisma_icinde(ortak.cwd_coz(cwd)):
+            raise ValueError("Sunucuda çalışma klasörü yalnız calisma/ altında olabilir; boş bırakırsan otomatik açılır.")
         ajan["cwd"] = cwd or f"{CALISMA}/{ajan['id']}"
     return ortak.cwd_coz(ajan["cwd"]) if ajan.get("cwd") == f"{CALISMA}/{ajan['id']}" else None
 
@@ -213,7 +215,7 @@ def ajan_ekle(alanlar):
         veri["ajanlar"].append(ajan)
         kaydet(veri)
         if klasor:
-            os.makedirs(klasor, exist_ok=True)
+            ortak.ajan_klasoru_ac(klasor)
         return ajan
 
 
@@ -224,7 +226,7 @@ def ajan_guncelle(ajan_id, alanlar):
         klasor = _alanlari_uygula(veri, ajan, {k: v for k, v in alanlar.items() if k != "id"})
         kaydet(veri)
         if klasor:
-            os.makedirs(klasor, exist_ok=True)
+            ortak.ajan_klasoru_ac(klasor)
         return ajan
 
 
@@ -295,5 +297,5 @@ def sablondan_ekle(sablon_id, ajan_idleri=None):
         if eklenen:
             kaydet(veri)
         for k in klasorler:
-            os.makedirs(k, exist_ok=True)
+            ortak.ajan_klasoru_ac(k)
     return {"eklenen": eklenen, "atlanan": atlanan}

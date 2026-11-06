@@ -142,10 +142,16 @@ def gorev_baslat(ajan_id, etiket=None, prompt=None, kaynak="buton", devam=None):
                                   "baslangic_ts": time.time()})
         kosucu = [sys.executable, os.path.join(ortak.KOK, "kosucu.py"), arg_yolu]
         try:
-            if sys.platform == "win32":
+            mod = ortak.kosu_modu()
+            if mod == "konsol":
                 # Windows'ta tmux yok: her koşu kendi konsol penceresinde açılır (canlı izleme o pencerede).
                 subprocess.Popen(kosucu, cwd=ajan["cwd"], creationflags=subprocess.CREATE_NEW_CONSOLE,
                                  env=ortak.kosucu_ortami())
+            elif mod == "arka":
+                # Docker: pencere yok; ilerleme yine ofis ekranında, ham çıktı kosular/<id>.konsol.log
+                with open(os.path.join(ortak.KOSU_DIZINI, f"{kosu_id}.konsol.log"), "ab") as log:
+                    subprocess.Popen(kosucu, cwd=ajan["cwd"], start_new_session=True, stdin=subprocess.DEVNULL,
+                                     stdout=log, stderr=subprocess.STDOUT, env=ortak.kosucu_ortami())
             else:
                 tmux = tmux_hazirla()
                 subprocess.run([tmux, "new-window", "-d", "-t", f"={TMUX_OTURUM}:", "-n", ajan_id,
@@ -840,7 +846,8 @@ def main():
     with open(os.path.join(ortak.VERI, "port"), "w") as f:
         f.write(str(port))
     print(f"Ajan Ofisi: http://{HOST}:{port}   (demo: http://{HOST}:{port}/?demo=1)", flush=True)
-    KOPRU.baslat()
+    if os.environ.get("OFIS_TERMINAL_KOPRUSU", "1") != "0":  # sunucuda kapalı: oturumlar kullanıcının bilgisayarında
+        KOPRU.baslat()
     IZLEYICI.baslat()
     TELEGRAM.baslat()
     sunucu.serve_forever()

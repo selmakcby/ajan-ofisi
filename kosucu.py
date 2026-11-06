@@ -98,6 +98,18 @@ def hafizaya_ekle(ajan_id, metin):
     return maddeler
 
 
+AJAN_ORTAM = ("HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "DISABLE_AUTOUPDATER")
+
+
+def ajan_ortami():
+    """claude sürecinin ortamı. Sunucuda: ayrı kullanıcının ev dizini (oturum kayıtları volume'da, --resume için)."""
+    o = ortak.alt_surec_ortami()
+    if ortak.SUNUCU:
+        o["HOME"] = os.path.join(ortak.VERI, "ev-ajan")
+        o["DISABLE_AUTOUPDATER"] = "1"
+    return o
+
+
 def komut_kur(ajan, genel_yasak, cikti_dizini, devam_session=None):
     claude = shutil.which("claude") or "/opt/homebrew/bin/claude"
     # Oturum saklanır: ajan soru sorarsa cevapla aynı oturum --resume ile sürdürülür.
@@ -111,11 +123,15 @@ def komut_kur(ajan, genel_yasak, cikti_dizini, devam_session=None):
         komut += ["--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
                   "--add-dir", ajan["cwd"]]
     izinli = ajan.get("izinli_araclar") or []
+    if ortak.SUNUCU:
+        izinli = ortak.sunucu_araclari(izinli)
     if izinli:
         komut += ["--allowedTools", *izinli]
     yasak = [*genel_yasak, *(ajan.get("yasak_araclar") or [])]
     if yasak:
         komut += ["--disallowedTools", *yasak]
+    if ortak.SUNUCU:  # gizli dosyaları okuyamayan ayrı kullanıcı (sudoers: yalnız claude, parolasız)
+        komut = ["sudo", "-n", "-u", "ajan", "--preserve-env=" + ",".join(AJAN_ORTAM), "--", *komut]
     return komut
 
 
@@ -165,7 +181,7 @@ def kos(arg_dosyasi):
     baglam = {"kosu_id": kosu_id, "ajan": ajan["id"], "oda": ajan["oda"]}
     log_yolu = os.path.join(ortak.KOSU_DIZINI, f"{kosu_id}.log")
     cikti_dizini = os.path.join(ortak.CIKTI_DIZINI, ajan["id"])
-    os.makedirs(cikti_dizini, exist_ok=True)
+    ortak.ajan_klasoru_ac(cikti_dizini)  # sunucuda ajan kullanıcısı da yazar (--add-dir)
 
     gorev = arg["prompt"].replace("{bugun}", ortak.bugun())
     devam = arg.get("devam") or {}
@@ -190,10 +206,10 @@ def kos(arg_dosyasi):
     try:
         with open(log_yolu, "w", encoding="utf-8") as log:
             calisma_dizini = YALIN_DIZIN if ajan.get("yalin") else ajan["cwd"]
-            os.makedirs(calisma_dizini, exist_ok=True)
+            ortak.ajan_klasoru_ac(calisma_dizini)
             surec = subprocess.Popen(komut, cwd=calisma_dizini, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                     env=ortak.alt_surec_ortami(),  # Telegram token'ı ajana sızmasın
+                                     env=ajan_ortami(),  # ofis sırları yok; yalnız Claude bağlantısı
                                      encoding="utf-8", errors="replace")  # Windows yerel kodlaması cp1254 olabilir
             surec.stdin.write(tam_prompt)
             surec.stdin.close()

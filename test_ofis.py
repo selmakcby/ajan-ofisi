@@ -1464,6 +1464,78 @@ def test_claude_uclari(tmp):
         s.kapat()
 
 
+# ---------- Sunucu T4: koşu modu ve sunucu kısıtları ----------
+
+class _SunucuModu:
+    def __enter__(self):
+        self.eski = ortak.SUNUCU; ortak.SUNUCU = True; return self
+
+    def __exit__(self, *a):
+        ortak.SUNUCU = self.eski
+
+
+def test_kosu_modu():
+    assert ortak.kosu_modu("win32", tmux_yolu="/usr/bin/tmux") == "konsol"
+    assert ortak.kosu_modu("linux", tmux_yolu="/usr/bin/tmux") == "tmux"
+    assert ortak.kosu_modu("linux", tmux_yolu=None) == "arka"
+
+
+def test_sunucu_araclari():
+    giris = ["Read", "Bash", "WebFetch", "Bash(rm -rf:*)", "Bash(git diff:*)", "Bash(curl:*)"]
+    sonuc = ortak.sunucu_araclari(giris)
+    assert sonuc[:2] == ["Read", "WebFetch"] or sonuc[0] == "Read"
+    assert "Bash" not in sonuc and "Bash(rm -rf:*)" not in sonuc and "Bash(curl:*)" not in sonuc
+    assert set(ortak.SUNUCU_BASH) <= set(sonuc) and len(sonuc) == len(set(sonuc))
+    assert ortak.sunucu_araclari(["Read", "Bash(git log:*)"]) == ["Read", "Bash(git log:*)"]
+
+
+def test_sunucu_yasaklari():
+    assert not set(ortak.SUNUCU_YASAK) & set(ortak.yasakli_araclar({}))
+    with _SunucuModu():
+        assert set(ortak.SUNUCU_YASAK) <= set(ortak.yasakli_araclar({}))
+
+
+def test_sunucu_cwd_disari_kurulmadi(tmp):
+    import ajan_yonetimi as ay
+    os.makedirs(os.path.join(tmp, "calisma", "ic")); os.makedirs(os.path.join(tmp, "dis"))
+    json.dump({"ajanlar": [{"id": "ceo", "ad": "CEO", "cwd": "."},
+                           {"id": "ic", "ad": "İç", "cwd": "calisma/ic"},
+                           {"id": "dis", "ad": "Dış", "cwd": os.path.join(tmp, "dis")}], "odalar": []},
+              open(os.path.join(tmp, "ajanlar.json"), "w", encoding="utf-8"))
+    ortak.AJANLAR_DOSYASI = os.path.join(tmp, "ajanlar.json")
+    assert ortak.ajanlari_yukle()[1]["dis"]["kurulu"] is True           # yerelde serbest
+    with _SunucuModu():
+        _, t = ortak.ajanlari_yukle()
+        assert t["ceo"]["kurulu"] and t["ic"]["kurulu"] and not t["dis"]["kurulu"]
+        for yol in (os.path.join(tmp, "dis"), "..", "calisma/../gizli"):
+            try:
+                ay.ajan_ekle({"ad": "Kaçak", "cwd": yol}); raise AssertionError(yol)
+            except ValueError:
+                pass
+        assert ay.ajan_ekle({"ad": "Uslu"})["cwd"] == "calisma/uslu"
+
+
+def test_sunucu_komut_sudo():
+    import kosucu
+    ajan = {"model": "sonnet", "cwd": ".", "izinli_araclar": ["Read", "Bash"]}
+    with _SunucuModu():
+        k = kosucu.komut_kur(ajan, ortak.yasakli_araclar({}), "cikti")
+        assert k[:4] == ["sudo", "-n", "-u", "ajan"] and k[4].startswith("--preserve-env=") and k[5] == "--"
+        for d in ("HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
+            assert d in k[4]
+        izinli = k[k.index("--allowedTools") + 1:k.index("--disallowedTools")]
+        assert "Bash" not in izinli and "Bash(git status:*)" in izinli
+        o = kosucu.ajan_ortami()
+        assert o["HOME"] == os.path.join(ortak.VERI, "ev-ajan") and o["DISABLE_AUTOUPDATER"] == "1"
+
+
+def test_yerelde_kisit_yok():
+    import kosucu
+    ajan = {"model": "sonnet", "cwd": ".", "izinli_araclar": ["Read", "Bash"]}
+    k = kosucu.komut_kur(ajan, [], "cikti")
+    assert k[0] != "sudo" and "Bash" in k
+
+
 # ---------- koşucu ----------
 
 def main():
