@@ -47,10 +47,11 @@ def _metin(deger, ad, maks, bos_olabilir=True):
 
 
 def dogrula(veri):
+    """Yalnız yükleyicinin (ortak.ajanlari_yukle) ve ön yüzün çalışması için gerekenler. Eski dosyalardaki
+    tuhaflıklar (aynı id'li iki oda, uzun görev etiketi, tam model adı, cwd'siz ajan) reddedilmez; uzunluk ve
+    seçenek sınırları yalnız formdan gelen alanlarda (_alanlari_uygula) uygulanır."""
     if not isinstance(veri, dict) or not isinstance(veri.get("ajanlar"), list):
         raise ValueError("Yapılandırmada 'ajanlar' listesi yok.")
-    if len(veri["ajanlar"]) > MAKS_AJAN:
-        raise ValueError(f"En fazla {MAKS_AJAN} ajan olabilir.")
     idler = set()
     for a in veri["ajanlar"]:
         if not isinstance(a, dict) or not isinstance(a.get("id"), str) or not ortak.AJAN_ID_DESENI.match(a["id"]):
@@ -58,26 +59,21 @@ def dogrula(veri):
         if a["id"] in idler:
             raise ValueError(f"Aynı kimlikte iki ajan var: {a['id']}")
         idler.add(a["id"])
-        _metin(a.get("ad"), "Ajan adı", MAKS_AD, bos_olabilir=False)
+        if "ad" in a and (not isinstance(a["ad"], str) or not a["ad"].strip()):
+            raise ValueError(f"Ajan adı boş olamaz: {a['id']}")
         oda = a.get("oda") or "genel"
         if not isinstance(oda, str) or not ortak.ODA_ID_DESENI.fullmatch(oda):
             raise ValueError(f"Geçersiz oda: {oda!r}")
         for g in a.get("hazir_gorevler") or []:
-            if not isinstance(g, dict):
+            if not isinstance(g, dict) or not isinstance(g.get("etiket"), str) or not isinstance(g.get("prompt"), str):
                 raise ValueError("Hazır görev biçimi bozuk.")
-            _metin(g.get("etiket"), "Görev adı", MAKS_AD, bos_olabilir=False)
-            _metin(g.get("prompt"), "Görev metni", ortak.MAKS_GIRDI, bos_olabilir=False)
         if not all(isinstance(x, str) for x in a.get("izinli_araclar") or []):
             raise ValueError("Araç listesi bozuk.")
     if "ceo" not in idler:
         raise ValueError("CEO silinemez.")
-    oda_idleri = set()
-    for o in veri.get("odalar") or []:
+    for o in veri.get("odalar") or []:  # aynı id'li oda eski dosyalarda olabilir: ilki geçerli, reddedilmez
         if not isinstance(o, dict) or not isinstance(o.get("id"), str) or not ortak.ODA_ID_DESENI.fullmatch(o["id"]):
             raise ValueError("Geçersiz oda kaydı.")
-        if o["id"] in oda_idleri:
-            raise ValueError(f"Aynı kimlikte iki oda var: {o['id']}")
-        oda_idleri.add(o["id"])
         if o.get("tema") is not None and o["tema"] not in TEMALAR:
             raise ValueError(f"Bilinmeyen oda görünümü: {o['tema']}")
 
@@ -88,10 +84,7 @@ def kaydet(veri):
         yol = ortak.AJANLAR_DOSYASI
         if os.path.exists(yol):
             shutil.copyfile(yol, yol + ".bak")  # elle düzeltmek gerekirse bir önceki hâl
-        gecici = yol + ".tmp"
-        with open(gecici, "w", encoding="utf-8") as f:
-            json.dump(veri, f, ensure_ascii=False, indent=2)
-        os.replace(gecici, yol)
+        ortak.atomik_yaz(yol, json.dumps(veri, ensure_ascii=False, indent=2))
 
 
 # ---------- odalar ----------
@@ -165,9 +158,12 @@ def _alanlari_uygula(veri, ajan, alanlar):
             raise ValueError("Yeni oda bilgisi bozuk.")
         ajan["oda"] = _oda_olustur(veri, y.get("ad"), y.get("tema") or None, y.get("aciklama") or "")["id"]
     elif "oda" in alanlar:
-        if alanlar["oda"] not in _oda_idleri(veri) or alanlar["oda"] == "ceo":
-            raise ValueError("Böyle bir oda yok.")
-        ajan["oda"] = alanlar["oda"]
+        oda = alanlar["oda"]
+        if not isinstance(oda, str) or oda not in _oda_idleri(veri) or (oda == "ceo" and ajan.get("oda") != "ceo"):
+            raise ValueError("Böyle bir oda yok.")  # CEO odasına yeni ajan konmaz; zaten oradaysa kalabilir
+        ajan["oda"] = oda
+    if ajan.get("id") == "ceo" and ajan.get("oda", "ceo") != "ceo":
+        raise ValueError("CEO kendi odasında kalır.")
     if "aciklama" in alanlar:
         ajan["aciklama"] = _metin(alanlar["aciklama"] or "", "Açıklama", MAKS_ACIKLAMA)
     if "model" in alanlar:
@@ -181,7 +177,7 @@ def _alanlari_uygula(veri, ajan, alanlar):
         ajan["izinli_araclar"] = list(dict.fromkeys(araclar))
     elif "yetkiler" in alanlar:
         y = alanlar["yetkiler"]
-        if not isinstance(y, list) or not set(y) <= set(YETKILER):
+        if not isinstance(y, list) or not all(isinstance(k, str) for k in y) or not set(y) <= set(YETKILER):
             raise ValueError("Bilinmeyen yetki.")
         ajan["izinli_araclar"] = [a for k in YETKILER if k in y or k == "okuma" for a in YETKILER[k]]
     if "hazir_gorevler" in alanlar:
@@ -201,7 +197,7 @@ def _alanlari_uygula(veri, ajan, alanlar):
     if "cwd" in alanlar:
         cwd = _metin(alanlar["cwd"] or "", "Çalışma klasörü", 500)
         ajan["cwd"] = cwd or f"{CALISMA}/{ajan['id']}"
-    return ortak.cwd_coz(ajan["cwd"]) if ajan["cwd"] == f"{CALISMA}/{ajan['id']}" else None
+    return ortak.cwd_coz(ajan["cwd"]) if ajan.get("cwd") == f"{CALISMA}/{ajan['id']}" else None
 
 
 def ajan_ekle(alanlar):
@@ -211,6 +207,8 @@ def ajan_ekle(alanlar):
         ajan = {"id": id_turet(ad, {a.get("id") for a in veri["ajanlar"]}), "ad": ad, "oda": "genel",
                 "cwd": "", "model": "sonnet", "ne_zaman": "istek", "ne_zaman_metin": "İstek gelince",
                 "aciklama": "", "izinli_araclar": list(YETKILER["okuma"]), "hazir_gorevler": []}
+        if len(veri["ajanlar"]) >= MAKS_AJAN:
+            raise ValueError(f"En fazla {MAKS_AJAN} ajan olabilir.")
         klasor = _alanlari_uygula(veri, ajan, {"cwd": "", **alanlar})
         veri["ajanlar"].append(ajan)
         kaydet(veri)
@@ -292,6 +290,8 @@ def sablondan_ekle(sablon_id, ajan_idleri=None):
             })
             eklenen.append(s["id"])
             klasorler.append(ortak.cwd_coz(cwd))
+        if len(veri["ajanlar"]) > MAKS_AJAN:
+            raise ValueError(f"En fazla {MAKS_AJAN} ajan olabilir.")
         if eklenen:
             kaydet(veri)
         for k in klasorler:

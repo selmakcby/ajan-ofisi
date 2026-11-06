@@ -1094,6 +1094,150 @@ def test_silinen_ajana_gorev_404(tmp):
         s.kapat()
 
 
+# ---------- Kurulum son gözden geçirme düzeltmeleri ----------
+
+def _ajanlar_eski(tmp):
+    """Kullanıcının gerçek dosyasındaki eski tuhaflıklar: aynı id'li iki oda, CEO odasında ajan, cwd'siz ajan,
+    tam model adı, uzun görev etiketi."""
+    yol = os.path.join(tmp, "ajanlar.json")
+    os.makedirs(os.path.join(tmp, "proje"), exist_ok=True)
+    json.dump({"surum": 2, "ayarlar": {"kullanici": "Ramazan", "marka": "CW Ajan Ofisi"},
+               "odalar": [{"id": "tasarim", "ad": "Teknoloji ve Mimari"}, {"id": "tasarim", "ad": "UI/UX Tasarım"}],
+               "ajanlar": [
+                   {"id": "ceo", "ad": "CEO", "oda": "ceo", "cwd": tmp, "model": "sonnet", "aciklama": "",
+                    "ne_zaman_metin": "", "izinli_araclar": [], "hazir_gorevler": []},
+                   {"id": "cto", "ad": "CTO", "oda": "ceo", "cwd": os.path.join(tmp, "proje"), "model": "claude-opus-4-8",
+                    "aciklama": "Teknoloji", "ne_zaman_metin": "", "izinli_araclar": ["Read", "Bash(git diff:*)"],
+                    "hazir_gorevler": [{"etiket": "E" * 80, "prompt": "p"}]},
+                   {"id": "cwdsiz", "ad": "Cwd'siz", "oda": "tasarim", "aciklama": "", "ne_zaman_metin": "",
+                    "izinli_araclar": [], "hazir_gorevler": []}]},
+              open(yol, "w", encoding="utf-8"), ensure_ascii=False)
+    ortak.AJANLAR_DOSYASI = yol
+
+
+def test_turkce_kullanici_adi_giris():  # bulgu 1
+    import hesap
+    hesap.hesap_olustur("şeyma", "gizli-sifre-1")
+    assert hesap.dogrula("şeyma", "gizli-sifre-1")
+    assert not hesap.dogrula("seyma", "gizli-sifre-1") and not hesap.dogrula("şeyma", "yanlis-sifre")
+
+
+def test_eski_dosyayla_kurulum_ve_duzenleme(tmp):  # bulgu 2 + 6
+    import ajan_yonetimi as ay
+    s = _sunucu(tmp)
+    _ajanlar_eski(tmp)
+    try:
+        assert s.istek("POST", "/api/kurulum", {"adim": "ad", "kullanici": "Ramazan", "marka": "CW"})[0] == 200
+        assert s.istek("POST", "/api/kurulum", {"adim": "hesap", "kullanici_adi": "ramazan", "sifre": "gizli-sifre-1"})[0] == 200
+        assert s.istek("POST", "/api/kurulum", {"adim": "bitir"})[0] == 200
+        assert s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": {"ad": "Yeni"}})[0] == 200
+        d, a, _ = s.istek("POST", "/api/ajanlar", {"islem": "guncelle", "id": "cto",
+                                                   "ajan": {"ad": "Baş Teknoloji", "oda": "ceo"}})
+        assert d == 200 and a["oda"] == "ceo" and a["model"] == "claude-opus-4-8"
+        assert a["izinli_araclar"] == ["Read", "Bash(git diff:*)"]
+        assert s.istek("POST", "/api/ajanlar", {"islem": "guncelle", "id": "cwdsiz", "ajan": {"ad": "Hâlâ cwd'siz"}})[0] == 200
+        assert [o["ad"] for o in ay.oku()["odalar"]] == ["Teknoloji ve Mimari", "UI/UX Tasarım"]  # eski veri korunur
+        assert s.istek("POST", "/api/ajanlar", {"islem": "guncelle", "id": "cwdsiz", "ajan": {"oda": "ceo"}})[0] == 400
+        assert s.istek("POST", "/api/odalar", {"islem": "ekle", "ad": "Tasarım"})[1]["id"] == "tasarim-2"
+    finally:
+        s.kapat()
+
+
+def test_bozuk_istek_ve_dosya_baglanti_dusurmez(tmp):  # bulgu 3
+    s = _sunucu(tmp)
+    s.giris()
+    try:
+        for govde in ({"islem": "ekle", "ajan": {"ad": "X", "oda": []}},
+                      {"islem": "ekle", "ajan": {"ad": "X", "yetkiler": [[1]]}},
+                      {"islem": "ekle", "ajan": {"ad": "X", "hazir_gorevler": [{"etiket": 1, "prompt": None}]}},
+                      {"islem": "guncelle", "id": "ceo", "ajan": {"yeni_oda": "metin"}}):
+            assert s.istek("POST", "/api/ajanlar", govde)[0] == 400, govde
+        open(ortak.AJANLAR_DOSYASI, "w", encoding="utf-8").write("{bozuk")
+        d, v, _ = s.istek("GET", "/api/oturum")
+        assert d == 200 and v["giris"] is True  # oturum durumu dosyadan bağımsız
+        assert s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": {"ad": "X"}})[0] in (400, 500)
+        open(ortak.AJANLAR_DOSYASI, "w", encoding="utf-8").write("[]")
+        assert s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": {"ad": "X"}})[0] in (400, 500)
+        assert s.istek("GET", "/api/ajanlar")[0] == 500
+    finally:
+        s.kapat()
+
+
+def test_atomik_yaz_windows_kilidi(tmp):  # bulgu 4
+    yol = os.path.join(tmp, "dosya.json")
+    gercek, sayac = os.replace, {"n": 0}
+
+    def kilitli(a, b):
+        sayac["n"] += 1
+        if sayac["n"] <= 2:
+            raise PermissionError(5, "Erişim engellendi")
+        return gercek(a, b)
+
+    os.replace = kilitli
+    try:
+        ortak.atomik_yaz(yol, '{"a": 1}')
+    finally:
+        os.replace = gercek
+    assert open(yol, encoding="utf-8").read() == '{"a": 1}' and sayac["n"] == 3
+    assert not os.path.exists(yol + ".tmp")
+
+
+def test_paralel_giris_kaba_kuvveti_asamaz(tmp):  # bulgu 5
+    import threading as _th
+    import hesap
+    import sunucu
+    hesap.hesap_olustur("ramazan", "gizli-sifre-1")
+    hesap.giris_basarili()
+    try:
+        for _ in range(6):
+            sunucu.giris_islem({"islem": "giris", "kullanici_adi": "ramazan", "sifre": "yanlis"}, None)
+        hesap._hata["son"] -= 10  # bekleme doldu
+        kodlar = []
+        ipler = [_th.Thread(target=lambda: kodlar.append(sunucu.giris_islem(
+            {"islem": "giris", "kullanici_adi": "ramazan", "sifre": "yanlis"}, None)[0])) for _ in range(6)]
+        [i.start() for i in ipler]
+        [i.join() for i in ipler]
+        assert kodlar.count(401) == 1 and kodlar.count(429) == 5, kodlar
+    finally:
+        hesap.giris_basarili()
+
+
+def test_sse_oturum_kapaninca_kesilir(tmp):  # bulgu 8
+    import http.client
+    import socket
+    import hesap
+    import sunucu
+    s = _sunucu(tmp)
+    s.giris()
+    eski = sunucu.SSE_OTURUM_SN
+    sunucu.SSE_OTURUM_SN = 0.3
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", s.port, timeout=5)
+        c.request("GET", "/api/olaylar", headers={"Host": f"127.0.0.1:{s.port}", "Cookie": s.cerez})
+        r = c.getresponse()
+        assert r.status == 200
+        hesap.oturum_kapat(s.cerez.split("=", 1)[1])
+        try:
+            kalan = r.read()  # oturum düşünce sunucu akışı kapatır → EOF
+        except socket.timeout:
+            raise AssertionError("akış oturum kapandıktan sonra sürdü")
+        assert kalan is not None
+        c.close()
+    finally:
+        sunucu.SSE_OTURUM_SN = eski
+        s.kapat()
+
+
+def test_buyuk_ajan_formu_kaydedilir(tmp):  # küçük → önemli: 10 × 4000 karakterlik görev
+    s = _sunucu(tmp)
+    s.giris()
+    try:
+        gorevler = [{"etiket": f"G{i}", "prompt": "x" * 4000} for i in range(10)]
+        assert s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": {"ad": "Uzun", "hazir_gorevler": gorevler}})[0] == 200
+    finally:
+        s.kapat()
+
+
 # ---------- koşucu ----------
 
 def main():

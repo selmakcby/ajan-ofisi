@@ -31,10 +31,7 @@ def _oku(ad, varsayilan):
 
 def _yaz(ad, veri):
     os.makedirs(ortak.DURUM_DIZINI, exist_ok=True)
-    gecici = _yol(ad) + ".tmp"
-    with open(gecici, "w", encoding="utf-8") as f:
-        json.dump(veri, f, ensure_ascii=False, indent=1)
-    os.replace(gecici, _yol(ad))
+    ortak.atomik_yaz(_yol(ad), json.dumps(veri, ensure_ascii=False, indent=1))
 
 
 # ---------- sorular + otomatik cevap sayacı ----------

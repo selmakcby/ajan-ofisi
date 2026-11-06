@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 
 if sys.platform == "win32":
@@ -80,10 +81,7 @@ def ajanlari_yukle():
             veri = json.load(f)
     except FileNotFoundError:
         veri = en_kucuk_yapilandirma()
-        gecici = AJANLAR_DOSYASI + ".tmp"
-        with open(gecici, "w", encoding="utf-8") as f:
-            json.dump(veri, f, ensure_ascii=False, indent=2)
-        os.replace(gecici, AJANLAR_DOSYASI)
+        atomik_yaz(AJANLAR_DOSYASI, json.dumps(veri, ensure_ascii=False, indent=2))
     if not isinstance(veri, dict) or not isinstance(veri.get("ajanlar"), list):
         raise YapilandirmaHatasi("ajanlar.json içinde 'ajanlar' listesi olmalı")
     tablo = {}
@@ -156,11 +154,29 @@ def durum_oku(ajan_id):
         return None
 
 
-def durum_yaz(ajan_id, durum):
-    gecici = durum_yolu(ajan_id) + ".tmp"
+def atomik_yaz(yol, metin, izin=None):
+    """Geçici dosyaya yazıp yerine koyar. Windows'ta hedef başka bir iş parçacığı/süreçte açıkken os.replace
+    PermissionError verir: kısa aralıklarla yeniden denenir. Geçici ad süreç/iş parçacığına özgüdür."""
+    gecici = f"{yol}.{os.getpid()}.{threading.get_ident()}.tmp"
     with open(gecici, "w", encoding="utf-8") as f:
-        json.dump(durum, f, ensure_ascii=False, indent=1)
-    os.replace(gecici, durum_yolu(ajan_id))
+        f.write(metin)
+    if izin is not None:
+        os.chmod(gecici, izin)
+    for deneme in range(20):
+        try:
+            os.replace(gecici, yol)
+            return
+        except PermissionError:
+            if deneme == 19:
+                try:
+                    os.remove(gecici)
+                finally:
+                    raise
+            time.sleep(0.05)
+
+
+def durum_yaz(ajan_id, durum):
+    atomik_yaz(durum_yolu(ajan_id), json.dumps(durum, ensure_ascii=False, indent=1))
 
 
 def surec_yasiyor(pid):
@@ -262,11 +278,7 @@ def env_yaz(guncel, yol=None):
             continue  # silinen ya da aynı anahtarın tekrarı
         yeni.append(satir)
     yeni += [f"{k}={v}" for k, v in kalan.items() if v is not None]
-    gecici = yol + ".tmp"
-    with open(gecici, "w", encoding="utf-8") as f:
-        f.write("\n".join(yeni) + "\n")
-    os.chmod(gecici, ENV_IZIN)
-    os.replace(gecici, yol)
+    atomik_yaz(yol, "\n".join(yeni) + "\n", ENV_IZIN)
 
 
 def telegram_ayari(yol=None):

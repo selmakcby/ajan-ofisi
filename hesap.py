@@ -40,11 +40,7 @@ def _oku(ad, varsayilan):
 
 def _yaz(ad, veri):
     os.makedirs(ortak.DURUM_DIZINI, exist_ok=True)
-    gecici = _yol(ad) + ".tmp"
-    with open(gecici, "w", encoding="utf-8") as f:
-        json.dump(veri, f)
-    os.chmod(gecici, ortak.ENV_IZIN)
-    os.replace(gecici, _yol(ad))
+    ortak.atomik_yaz(_yol(ad), json.dumps(veri), ortak.ENV_IZIN)
 
 
 def _ozet(sifre, tuz):
@@ -83,7 +79,9 @@ def dogrula(ad, sifre):
     if not h.get("kullanici_adi") or not isinstance(sifre, str):
         return False
     ozet = _ozet(sifre, bytes.fromhex(h["tuz"]))  # ad yanlış olsa da hesapla: zamanlama ad sızdırmasın
-    return hmac.compare_digest(ozet, h["sifre_ozeti"]) and hmac.compare_digest(str(ad), h["kullanici_adi"])
+    # compare_digest ASCII olmayan str'de TypeError verir ("şeyma"): bayt olarak karşılaştır.
+    return hmac.compare_digest(ozet.encode(), h["sifre_ozeti"].encode()) and \
+        hmac.compare_digest(str(ad).encode("utf-8"), h["kullanici_adi"].encode("utf-8"))
 
 
 def sifre_sifirla(yeni):

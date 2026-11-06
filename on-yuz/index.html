@@ -193,6 +193,7 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 .form-a .gorev textarea{grid-column:1 / -1;min-height:56px}
 .form-a .dugmeler-a{display:flex;gap:10px;margin-top:20px}
 .form-a .ipucu{font-size:12px;color:var(--soluk);margin-top:4px}
+.sayfa h2.ara-baslik{margin-top:28px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--soluk);font-weight:600;padding:8px 10px;border-bottom:1px solid rgba(59,52,44,.12)}
 td{padding:9px 10px;border-bottom:1px solid rgba(59,52,44,.06);font-variant-numeric:tabular-nums}
@@ -425,16 +426,17 @@ addEventListener('keydown', sesAc);
 addEventListener('pointerdown', () => { if (ses && ses.state === 'suspended') ses.resume(); });
 
 /* ---------- veri katmanı: gerçek API ya da demo ---------- */
+let kapiGecti = false; // giriş kontrolü geçildi mi? Önce 401 yeniden yükleme döngüsü yaratmasın
 async function getJSON(yol) {
   const r = await fetch(yol, { cache:'no-store' });
-  if (r.status === 401 && !DEMO) location.reload(); // oturum süresi doldu → giriş ekranı
+  if (r.status === 401 && kapiGecti) location.reload(); // oturum süresi doldu → giriş ekranı
   if (!r.ok) throw new Error(yol + ' ' + r.status);
   return r.json();
 }
 async function postJSON(yol, govde) {
   const r = await fetch(yol, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(govde) });
   const veri = await r.json().catch(() => ({}));
-  if (r.status === 401 && yol !== '/api/oturum' && yol !== '/api/kurulum' && !DEMO) location.reload(); // oturum düştü → giriş
+  if (r.status === 401 && kapiGecti && yol !== '/api/oturum') location.reload(); // oturum düştü → giriş
   return { durum:r.status, veri };
 }
 
@@ -594,6 +596,7 @@ if (!DEMO) {
   try { oturum = await getJSON('/api/oturum'); } catch { /* sunucu yok: aşağıdaki "sunucu yok" akışı sürer */ }
   if (oturum && (oturum.kurulum || (oturum.giris && !oturum.sihirbaz_bitti))) { kurulumGoster(oturum); await new Promise(() => {}); }
   else if (oturum && !oturum.giris) { girisGoster(); await new Promise(() => {}); }
+  kapiGecti = !!oturum; // oturum alınamadıysa (sunucu hatası) yenileme döngüsüne girme; "sunucu yok" akışı sürer
 }
 
 /* ---------- three kurulum ---------- */
@@ -1976,7 +1979,46 @@ async function ajanlarSayfasi() {
     k.append(el('h4', null, a.ad), el('div', 'oda-adi', odaAdi(a.oda || 'genel')), el('p', null, a.aciklama || ''), islem);
     iz.append(k);
   });
-  return [el('h2', null, 'Ajanlar'), el('p', 'alt', `${v.ajanlar.length} ajan. Ekle, düzenle ya da sektör şablonundan hazır ajanlar al. Değişiklik hemen ofise yansır.`), arac, iz];
+  return [el('h2', null, 'Ajanlar'), el('p', 'alt', `${v.ajanlar.length} ajan. Ekle, düzenle ya da sektör şablonundan hazır ajanlar al. Değişiklik hemen ofise yansır.`), arac, iz,
+    el('h2', 'ara-baslik', 'Odalar'), el('p', 'alt', 'Odanın adını, açıklamasını ve görünümünü değiştir. Ajanı kalmayan oda sahnede görünmez.'), odalarDuzenle(v)];
+}
+function odaListesi(v) { // ayarlı odalar + yalnız ajanlarda geçenler (ilk kayıt geçerli), CEO hariç
+  const harita = new Map();
+  v.odalar.forEach(o => { if (o?.id && !harita.has(o.id)) harita.set(o.id, o); });
+  v.ajanlar.forEach(a => { const id = a.oda || 'genel'; if (!harita.has(id)) harita.set(id, { id }); });
+  harita.delete('ceo');
+  return [...harita.values()];
+}
+function odalarDuzenle(v) {
+  const iz = el('div', 'izgara');
+  odaListesi(v).forEach(o => {
+    const k = el('div', 'kart'); const ad = o.ad || TEMALAR[o.id]?.ad || odaAdTuret(o.id);
+    const duz = el('button', 'git', 'Düzenle');
+    duz.onclick = () => {
+      const f = el('form', 'form-a');
+      const adI = el('input'); adI.type = 'text'; adI.value = ad; adI.maxLength = 60;
+      const acI = el('textarea'); acI.value = o.aciklama || ''; acI.maxLength = 500;
+      const tema = el('select'); const v0 = el('option', null, 'Kendiliğinden'); v0.value = ''; tema.append(v0);
+      TEMA_SECENEK.forEach(t => { const x = el('option', null, TEMALAR[t]?.ad || t); x.value = t; tema.append(x); });
+      tema.value = o.tema || '';
+      const kaydet = el('button', 'koyu', 'Kaydet'); kaydet.type = 'submit';
+      const vazgec = el('button', 'dugme', 'Vazgeç'); vazgec.type = 'button'; vazgec.onclick = () => sekmeAc('ajanlar');
+      const alt = el('div', 'dugmeler-a'); alt.append(kaydet, vazgec);
+      f.append(el('label', null, 'Oda adı'), adI, el('label', null, 'Açıklama'), acI, el('label', null, 'Görünüm'), tema, alt);
+      f.onsubmit = async e => {
+        e.preventDefault(); kaydet.disabled = true;
+        const { durum, veri } = await postJSON('/api/odalar', { islem:'guncelle', id:o.id, ad:adI.value.trim(), aciklama:acI.value.trim(), tema:tema.value || null });
+        kaydet.disabled = false;
+        if (durum === 200) return sonraBildir('Oda kaydedildi: ' + veri.ad);
+        tost(veri.hata || 'Kaydedilemedi.');
+      };
+      sayfaGoster(el('h2', null, ad), el('p', 'alt', 'Oda kimliği değişmez; ajanlar bu odada kalır.'), f);
+    };
+    k.append(el('h4', null, ad), el('div', 'oda-adi', o.tema ? 'Görünüm: ' + (TEMALAR[o.tema]?.ad || o.tema) : 'Görünüm: kendiliğinden'),
+      el('p', null, o.aciklama || ''), duz);
+    iz.append(k);
+  });
+  return iz;
 }
 function sayfaGoster(...icerik) { sayfa.replaceChildren(...icerik); sayfa.scrollTop = 0; }
 function ajanFormu(a, v) {
@@ -1987,9 +2029,9 @@ function ajanFormu(a, v) {
   const metin = (deger, ipucu) => { const i = el('input'); i.type = 'text'; i.value = deger || ''; if (ipucu) i.placeholder = ipucu; return i; };
   const ad = etiket('Ad', metin(a.ad, 'ör. Blog Yazarı')); ad.maxLength = 60; ad.required = true;
   // oda: var olanlar + yeni oda
-  const odalar = [...new Map([...v.odalar.map(o => [o.id, o.ad || odaAdTuret(o.id)]),
-    ...v.ajanlar.map(x => [x.oda || 'genel', (v.odalar.find(o => o.id === (x.oda || 'genel'))?.ad) || odaAdTuret(x.oda || 'genel')])])]
-    .filter(([id]) => id !== 'ceo');
+  // CEO odası yalnız ajan zaten oradaysa listede (düzenleyince başka odaya taşınmasın)
+  const odalar = odaListesi(v).map(o => [o.id, o.ad || TEMALAR[o.id]?.ad || odaAdTuret(o.id)]);
+  if (a.oda === 'ceo' && a.id !== 'ceo') odalar.unshift(['ceo', TEMALAR.ceo?.ad || 'CEO']);
   const oda = el('select');
   odalar.forEach(([id, ad]) => { const o = el('option', null, ad); o.value = id; oda.append(o); });
   const yeniO = el('option', null, '+ Yeni oda…'); yeniO.value = '__yeni'; oda.append(yeniO);
@@ -2010,7 +2052,8 @@ function ajanFormu(a, v) {
   const cwd = dl('Çalışma klasörü', metin(a.cwd && a.cwd !== 'calisma/' + a.id ? a.cwd : '', 'Boş bırakırsan ofisin içinde ajana özel klasör açılır'),
     'Var olan bir proje klasörünün tam yolunu yazabilirsin. Klasör yoksa ajan “kurulmadı” görünür.');
   const model = el('select'); [['sonnet', 'Sonnet (dengeli)'], ['haiku', 'Haiku (hızlı, ekonomik)'], ['opus', 'Opus (en güçlü)']].forEach(([d, m]) => { const o = el('option', null, m); o.value = d; model.append(o); });
-  model.value = ['sonnet', 'haiku', 'opus'].includes(a.model) ? a.model : 'sonnet';
+  if (a.model && !['sonnet', 'haiku', 'opus'].includes(a.model)) { const o = el('option', null, 'Dosyadaki: ' + a.model); o.value = a.model; model.append(o); }
+  model.value = a.model || 'sonnet'; // dosyadaki tam model adı korunur
   dl('Model', model);
   det.append(el('label', null, 'Yetkiler'));
   const araclar = el('textarea'); araclar.value = (a.izinli_araclar || []).join('\n');
@@ -2047,10 +2090,11 @@ function ajanFormu(a, v) {
   const alt = el('div', 'dugmeler-a'); alt.append(kaydet, vazgec); f.append(alt);
   f.onsubmit = async e => {
     e.preventDefault();
-    const ajan = { ad:ad.value.trim(), aciklama:ac.value.trim(), model:model.value, cwd:cwd.value.trim(),
+    const ajan = { ad:ad.value.trim(), aciklama:ac.value.trim(), cwd:cwd.value.trim(),
       izinli_araclar:[...new Set(araclar.value.split('\n').map(s => s.trim()).filter(Boolean))],
       hazir_gorevler:[...gorevler.children].map(s => ({ etiket:s.children[0].value.trim(), prompt:s.children[2].value.trim() })).filter(g => g.etiket || g.prompt),
       yalin:yalin.checked, tetik_kelime:tetik.value.trim() };
+    if (yeni || model.value !== a.model) ajan.model = model.value; // değişmediyse gönderme (dosyadaki ad kalır)
     if (a.id === 'ceo') { delete ajan.cwd; } // CEO ofis klasöründe kalır
     if (oda.value === '__yeni') { if (!yeniAd.value.trim()) return tost('Yeni odanın adını yaz.'); ajan.yeni_oda = { ad:yeniAd.value.trim(), tema:tema.value || null }; }
     else if (a.id !== 'ceo') ajan.oda = oda.value;

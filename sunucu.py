@@ -33,7 +33,9 @@ TMUX_OTURUM = "ofis"
 ON_YUZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "on-yuz")  # kodun yanında
 IZINLI_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
 IZINLI_HOST = re.compile(r"^(localhost|127\.0\.0\.1)(:\d+)?$")
-MAKS_GOVDE = 16_000
+MAKS_GOVDE = 64_000  # 10 hazır görev × 4000 karakter sığsın
+SSE_OTURUM_SN = 2.0  # açık olay akışında oturum bu aralıkla yeniden denetlenir
+GIRIS_KILIDI = threading.Lock()  # bekleme denetimi + scrypt + hata kaydı tek parça (paralel deneme ve bellek)
 MAKS_ATAMA = 5
 CEO_ZAMAN_ASIMI = 240
 BITTI_GOSTER_SN = 600
@@ -322,7 +324,10 @@ def ceo_triyaj(ajan_id, soru, ozet):
 # ---------- oturum ve kurulum ----------
 
 def oturum_yaniti(token):
-    veri = ajan_yonetimi.oku()
+    try:
+        veri = ajan_yonetimi.oku()
+    except (ValueError, ortak.YapilandirmaHatasi):  # ajanlar.json elle bozulmuş: oturum durumu yine dönsün
+        veri = {"ayarlar": {"kurulum_tamam": True}}
     ayar = ortak.ayarlar(veri)
     if not hesap.hesap_var():
         return {"kurulum": True, "adim": "hesap" if ayar["kullanici"] else "ad", "ayarlar": ayar}
@@ -348,6 +353,11 @@ def giris_islem(veri, token):
         return 200, {"tamam": True}, cerez(None)
     if veri.get("islem") != "giris":
         raise IstekHatasi(400, "bilinmeyen işlem")
+    with GIRIS_KILIDI:
+        return _giris(veri)
+
+
+def _giris(veri):
     bekle = hesap.giris_bekleme()
     if bekle:
         return 429, {"hata": f"Çok fazla deneme; {bekle} sn sonra tekrar dene.", "bekle_sn": bekle}, None
@@ -368,7 +378,10 @@ def kurulum_islem(veri, token):
         kullanici, marka = veri.get("kullanici", ""), veri.get("marka", "")
         if not isinstance(kullanici, str) or not isinstance(marka, str) or len(kullanici) > 40 or len(marka) > 40:
             raise IstekHatasi(400, "Ad ve ofis adı en fazla 40 karakter olmalı.")
-        _ayarlari_yaz(kullanici=kullanici.strip(), marka=marka.strip() or "Ajan Ofisi")
+        try:
+            _ayarlari_yaz(kullanici=kullanici.strip(), marka=marka.strip() or "Ajan Ofisi")
+        except (ValueError, ortak.YapilandirmaHatasi) as e:
+            raise IstekHatasi(400, f"ajanlar.json yazılamadı: {e}") from e
         return 200, {"tamam": True}, None
     if adim == "hesap":
         if hesap_var:
@@ -381,7 +394,10 @@ def kurulum_islem(veri, token):
     if adim == "bitir":
         if not hesap_var:
             raise IstekHatasi(400, "Önce hesap aç.")
-        _ayarlari_yaz(kurulum_tamam=True)
+        try:
+            _ayarlari_yaz(kurulum_tamam=True)
+        except (ValueError, ortak.YapilandirmaHatasi) as e:
+            raise IstekHatasi(400, f"ajanlar.json yazılamadı: {e}") from e
         return 200, {"tamam": True}, None
     raise IstekHatasi(400, "bilinmeyen adım")
 
@@ -410,8 +426,8 @@ def ajan_islem(veri):
                 raise ValueError("Seçili ajan listesi bozuk.")
             return ajan_yonetimi.sablondan_ekle(str(veri.get("sablon")), secili)
         raise ValueError("bilinmeyen işlem")
-    except ValueError as e:
-        raise IstekHatasi(400, str(e)) from e
+    except (ValueError, TypeError, KeyError, AttributeError, ortak.YapilandirmaHatasi) as e:
+        raise IstekHatasi(400, str(e) if isinstance(e, ValueError) else "istek ya da ajanlar.json bozuk") from e
 
 
 def oda_islem(veri):
@@ -422,8 +438,8 @@ def oda_islem(veri):
             alanlar = {k: veri[k] for k in ("ad", "aciklama", "tema") if k in veri}
             return ajan_yonetimi.oda_guncelle(str(veri.get("id")), alanlar)
         raise ValueError("bilinmeyen işlem")
-    except ValueError as e:
-        raise IstekHatasi(400, str(e)) from e
+    except (ValueError, TypeError, KeyError, AttributeError, ortak.YapilandirmaHatasi) as e:
+        raise IstekHatasi(400, str(e) if isinstance(e, ValueError) else "istek ya da ajanlar.json bozuk") from e
 
 
 # ---------- okuma uçları ----------
@@ -591,7 +607,27 @@ class Isleyici(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def _korumali(self, isle):
+        """Beklenmeyen hata bağlantıyı düşürmesin: JSON 500 döner, ayrıntı yalnız sunucu loguna."""
+        try:
+            isle()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:  # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+            try:
+                self._json(500, {"hata": f"sunucu hatası ({type(e).__name__})"})
+            except OSError:
+                pass
+
     def do_GET(self):
+        self._korumali(self._get)
+
+    def do_POST(self):
+        self._korumali(self._post)
+
+    def _get(self):
         if not self._guvenlik():
             return
         yol = urlparse(self.path)
@@ -624,7 +660,7 @@ class Isleyici(SimpleHTTPRequestHandler):
             return self._json(404, {"hata": "yok"})
         return super().do_GET()
 
-    def do_POST(self):
+    def _post(self):
         if not self._guvenlik():
             return
         yol = urlparse(self.path).path
@@ -684,8 +720,14 @@ class Isleyici(SimpleHTTPRequestHandler):
                 for olay in gecmis[-son:]:
                     self._sse_yaz(olay)
             konum = os.path.getsize(ortak.OLAYLAR) if os.path.exists(ortak.OLAYLAR) else 0
-            nabiz = time.time()
+            nabiz = denetim = time.time()
+            token = self._token()
             while True:
+                if time.time() - denetim > SSE_OTURUM_SN:  # çıkış/şifre sıfırlama/süre dolumu akışı da keser
+                    if not hesap.oturum_gecerli(token):
+                        self.close_connection = True  # keep-alive başlığı bağlantıyı açık tutmasın
+                        return
+                    denetim = time.time()
                 boyut = os.path.getsize(ortak.OLAYLAR) if os.path.exists(ortak.OLAYLAR) else 0
                 if boyut > konum:
                     with open(ortak.OLAYLAR, "rb") as f:
