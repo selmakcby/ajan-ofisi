@@ -14,6 +14,7 @@ import threading
 import time
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import CookieError, SimpleCookie
 from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,11 +24,13 @@ import token_sayac  # noqa: E402
 import sorular  # noqa: E402
 import akis  # noqa: E402
 import telegram_kopru  # noqa: E402
+import hesap  # noqa: E402
+import ajan_yonetimi  # noqa: E402
 
 HOST = "127.0.0.1"
 ILK_PORT = int(os.environ.get("OFIS_PORT", "8796"))
 TMUX_OTURUM = "ofis"
-ON_YUZ = os.path.join(ortak.KOK, "on-yuz")
+ON_YUZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "on-yuz")  # kodun yanında
 IZINLI_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
 IZINLI_HOST = re.compile(r"^(localhost|127\.0\.0\.1)(:\d+)?$")
 MAKS_GOVDE = 16_000
@@ -60,6 +63,16 @@ TRIYAJ_SEMASI = {
     "required": ["karar", "cevap", "gerekce", "kullaniciya_not"],
 }
 OFIS_DURUMU_MAKS = 3000
+
+
+CEREZ_ADI = "ofis_oturum"
+# Girişsiz açık uçlar (kurulum adımlarının kendi kuralları kurulum_islem içinde).
+ACIK_UCLAR = {("GET", "/api/oturum"), ("POST", "/api/oturum"), ("POST", "/api/kurulum")}
+
+
+def cerez(token):
+    """HttpOnly: JS okuyamaz; SameSite=Strict: başka siteden gönderilmez. Secure B'de (HTTPS) eklenecek."""
+    return f"{CEREZ_ADI}={token or ''}; HttpOnly; SameSite=Strict; Path=/; Max-Age={hesap.OTURUM_SN if token else 0}"
 
 
 class IstekHatasi(Exception):
@@ -306,6 +319,73 @@ def ceo_triyaj(ajan_id, soru, ozet):
     return {k: v[k] for k in ("karar", "cevap", "gerekce", "kullaniciya_not")}
 
 
+# ---------- oturum ve kurulum ----------
+
+def oturum_yaniti(token):
+    veri = ajan_yonetimi.oku()
+    ayar = ortak.ayarlar(veri)
+    if not hesap.hesap_var():
+        return {"kurulum": True, "adim": "hesap" if ayar["kullanici"] else "ad", "ayarlar": ayar}
+    giris = hesap.oturum_gecerli(token)
+    yanit = {"kurulum": False, "giris": giris,
+             "sihirbaz_bitti": bool((veri.get("ayarlar") or {}).get("kurulum_tamam"))}
+    if giris:
+        yanit["kullanici_adi"] = hesap.kullanici_adi()
+    return yanit
+
+
+def _ayarlari_yaz(**alanlar):
+    with ajan_yonetimi.KILIT:
+        veri = ajan_yonetimi.oku()
+        veri.setdefault("ayarlar", {}).update(alanlar)
+        ajan_yonetimi.kaydet(veri)
+
+
+def giris_islem(veri, token):
+    """(kod, yanıt, çerez) — giriş/çıkış."""
+    if veri.get("islem") == "cikis":
+        hesap.oturum_kapat(token)
+        return 200, {"tamam": True}, cerez(None)
+    if veri.get("islem") != "giris":
+        raise IstekHatasi(400, "bilinmeyen işlem")
+    bekle = hesap.giris_bekleme()
+    if bekle:
+        return 429, {"hata": f"Çok fazla deneme; {bekle} sn sonra tekrar dene.", "bekle_sn": bekle}, None
+    if not hesap.dogrula(str(veri.get("kullanici_adi") or ""), str(veri.get("sifre") or "")):
+        hesap.giris_hatasi()
+        return 401, {"hata": "Kullanıcı adı ya da şifre yanlış."}, None
+    hesap.giris_basarili()
+    return 200, {"tamam": True}, cerez(hesap.oturum_ac())
+
+
+def kurulum_islem(veri, token):
+    """(kod, yanıt, çerez). Hesap açılmadan önce yalnız 'ad' ve 'hesap' girişsiz; sonrası oturum ister."""
+    adim = veri.get("adim")
+    hesap_var = hesap.hesap_var()
+    if hesap_var and not hesap.oturum_gecerli(token):
+        return 401, {"hata": "giriş gerekli"}, None
+    if adim == "ad":
+        kullanici, marka = veri.get("kullanici", ""), veri.get("marka", "")
+        if not isinstance(kullanici, str) or not isinstance(marka, str) or len(kullanici) > 40 or len(marka) > 40:
+            raise IstekHatasi(400, "Ad ve ofis adı en fazla 40 karakter olmalı.")
+        _ayarlari_yaz(kullanici=kullanici.strip(), marka=marka.strip() or "Ajan Ofisi")
+        return 200, {"tamam": True}, None
+    if adim == "hesap":
+        if hesap_var:
+            return 409, {"hata": "Hesap zaten var."}, None
+        try:
+            hesap.hesap_olustur(veri.get("kullanici_adi"), veri.get("sifre"))
+        except ValueError as e:
+            raise IstekHatasi(400, str(e)) from e
+        return 200, {"tamam": True}, cerez(hesap.oturum_ac())  # hesap açan otomatik giriş yapar
+    if adim == "bitir":
+        if not hesap_var:
+            raise IstekHatasi(400, "Önce hesap aç.")
+        _ayarlari_yaz(kurulum_tamam=True)
+        return 200, {"tamam": True}, None
+    raise IstekHatasi(400, "bilinmeyen adım")
+
+
 # ---------- okuma uçları ----------
 
 def olaylari_oku():
@@ -422,15 +502,31 @@ class Isleyici(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
 
-    def _json(self, kod, veri):
+    def _json(self, kod, veri, cerez=None):
         govde = json.dumps(veri, ensure_ascii=False).encode("utf-8")
         self.send_response(kod)
+        if cerez:
+            self.send_header("Set-Cookie", cerez)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(govde)))
         self.send_header("Cache-Control", "no-store")
         self._cors()
         self.end_headers()
         self.wfile.write(govde)
+
+    def _token(self):
+        try:
+            c = SimpleCookie(self.headers.get("Cookie") or "")
+        except CookieError:
+            return None
+        return c[CEREZ_ADI].value if CEREZ_ADI in c else None
+
+    def _kapi(self, yontem, yol):
+        """Tüm /api/* giriş arkasında (ACIK_UCLAR hariç). Statik dosyalar açık."""
+        if not yol.startswith("/api/") or (yontem, yol) in ACIK_UCLAR or hesap.oturum_gecerli(self._token()):
+            return True
+        self._json(401, {"hata": "giriş gerekli"})
+        return False
 
     def _govde(self):
         uzunluk = int(self.headers.get("Content-Length") or 0)
@@ -459,6 +555,10 @@ class Isleyici(SimpleHTTPRequestHandler):
         if not self._guvenlik():
             return
         yol = urlparse(self.path)
+        if not self._kapi("GET", yol.path):
+            return
+        if yol.path == "/api/oturum":
+            return self._json(200, oturum_yaniti(self._token()))
         if yol.path == "/api/ajanlar":
             return self._json(200, ajanlar_yaniti())
         if yol.path == "/api/sayac":
@@ -481,8 +581,14 @@ class Isleyici(SimpleHTTPRequestHandler):
         if not self._guvenlik():
             return
         yol = urlparse(self.path).path
+        if not self._kapi("POST", yol):
+            return
         try:
             veri = self._govde()
+            if yol == "/api/oturum":
+                return self._json(*giris_islem(veri, self._token()))
+            if yol == "/api/kurulum":
+                return self._json(*kurulum_islem(veri, self._token()))
             if yol == "/api/gorev":
                 ajan = veri.get("ajan")
                 if not isinstance(ajan, str) or not ortak.AJAN_ID_DESENI.match(ajan):
@@ -571,11 +677,27 @@ def bos_port_ile_ac():
     raise SystemExit("boş port bulunamadı")
 
 
+def sifre_sifirla_komutu():
+    import getpass
+    if not hesap.hesap_var():
+        raise SystemExit("Henüz hesap yok. Sunucuyu başlat ve arayüzdeki kurulumu tamamla.")
+    yeni = getpass.getpass(f"'{hesap.kullanici_adi()}' için yeni şifre: ")
+    if yeni != getpass.getpass("Yeni şifre (tekrar): "):
+        raise SystemExit("Şifreler eşleşmedi; değiştirilmedi.")
+    try:
+        hesap.sifre_sifirla(yeni)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print("Şifre değişti. Tüm açık oturumlar kapatıldı.")
+
+
 def main():
+    if "--sifre-sifirla" in sys.argv[1:]:
+        return sifre_sifirla_komutu()
     for d in (ortak.DURUM_DIZINI, ortak.KOSU_DIZINI, ortak.CIKTI_DIZINI, ortak.HAFIZA_DIZINI, ON_YUZ):
         os.makedirs(d, exist_ok=True)
     try:
-        ortak.ajanlari_yukle()  # bozuk ya da eksik ajanlar.json'da hemen düş
+        ortak.ajanlari_yukle()  # eksikse en küçük yapılandırma yazılır; bozuksa hemen düş
     except (ortak.YapilandirmaHatasi, ValueError, json.JSONDecodeError) as e:
         raise SystemExit(f"Ajan Ofisi başlatılamadı: {e}")
     token_sayac.olaylardan_geri_kur(olaylari_oku())  # bugünkü eski koşuların usage'ı sayaçta yoksa ekle

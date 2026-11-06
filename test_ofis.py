@@ -889,6 +889,148 @@ def test_sablondan_secili_ajanlar(tmp):
             pass
 
 
+# ---------- Kurulum T4: giriş kapısı ve kurulum uçları ----------
+
+class _Sunucu:
+    """Gerçek ThreadingHTTPServer (rastgele port) + çerez saklayan basit istemci."""
+
+    def __init__(self, tmp):
+        import threading
+        from http.server import ThreadingHTTPServer
+        import sunucu
+        _ajanlar(tmp)
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), sunucu.Isleyici)
+        self.srv.daemon_threads = True
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.cerez = None
+
+    def ham(self, yontem, yol, govde=None):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        basliklar = {"Host": f"127.0.0.1:{self.port}"}
+        veri = None
+        if govde is not None:
+            veri = json.dumps(govde).encode("utf-8")
+            basliklar["Content-Type"] = "application/json"
+        if self.cerez:
+            basliklar["Cookie"] = self.cerez
+        c.request(yontem, yol, body=veri, headers=basliklar)
+        r = c.getresponse()
+        r.govde = r.read()
+        c.close()
+        return r
+
+    def istek(self, yontem, yol, govde=None):
+        r = self.ham(yontem, yol, govde)
+        sc = r.getheader("Set-Cookie")
+        if sc:
+            self.cerez = None if "Max-Age=0" in sc else sc.split(";")[0]
+        try:
+            v = json.loads(r.govde)
+        except ValueError:
+            v = None
+        return r.status, v, sc
+
+    def giris(self):
+        import hesap
+        hesap.hesap_olustur("ramazan", "gizli-sifre-1")
+        hesap.giris_basarili()
+        assert self.istek("POST", "/api/oturum", {"islem": "giris", "kullanici_adi": "ramazan",
+                                                  "sifre": "gizli-sifre-1"})[0] == 200
+
+    def kapat(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+
+def _sunucu(tmp):
+    return _Sunucu(tmp)
+
+
+def test_girissiz_api_401(tmp):
+    s = _sunucu(tmp)
+    try:
+        for yol in ("/api/ajanlar", "/api/telegram", "/api/sayac", "/api/olaylar", "/api/hafiza"):
+            assert s.istek("GET", yol)[0] == 401, yol
+        assert s.istek("POST", "/api/gorev", {"ajan": "yazar", "prompt": "x"})[0] == 401
+        assert s.istek("POST", "/api/ceo", {"metin": "x"})[0] == 401
+        assert s.istek("GET", "/api/oturum")[1]["kurulum"] is True
+        assert s.ham("GET", "/").status == 200  # statik sayfa açık
+    finally:
+        s.kapat()
+
+
+def test_kurulum_akisi_ve_giris(tmp):
+    s = _sunucu(tmp)
+    try:
+        assert s.istek("GET", "/api/oturum")[1]["adim"] == "ad"
+        assert s.istek("POST", "/api/kurulum", {"adim": "ad", "kullanici": "Ramazan", "marka": "CW"})[0] == 200
+        assert s.istek("GET", "/api/oturum")[1]["adim"] == "hesap"
+        d, v, cerez = s.istek("POST", "/api/kurulum", {"adim": "hesap", "kullanici_adi": "ramazan",
+                                                       "sifre": "gizli-sifre-1"})
+        assert d == 200 and "HttpOnly" in cerez and "SameSite=Strict" in cerez and "Max-Age=2592000" in cerez
+        assert "Path=/" in cerez
+        assert s.istek("GET", "/api/ajanlar")[0] == 200       # otomatik giriş
+        assert s.istek("POST", "/api/kurulum", {"adim": "hesap", "kullanici_adi": "x2", "sifre": "12345678"})[0] == 409
+        assert s.istek("GET", "/api/oturum")[1]["sihirbaz_bitti"] is False
+        assert s.istek("POST", "/api/kurulum", {"adim": "bitir"})[0] == 200
+        s.istek("POST", "/api/oturum", {"islem": "cikis"})
+        assert s.cerez is None and s.istek("GET", "/api/ajanlar")[0] == 401
+        assert s.istek("POST", "/api/kurulum", {"adim": "ad", "kullanici": "Saldırgan"})[0] == 401  # hesap var
+        assert s.istek("POST", "/api/kurulum", {"adim": "bitir"})[0] == 401
+        assert s.istek("POST", "/api/oturum", {"islem": "giris", "kullanici_adi": "ramazan",
+                                               "sifre": "yanlis-sifre"})[0] == 401
+        assert s.istek("POST", "/api/oturum", {"islem": "giris", "kullanici_adi": "ramazan",
+                                               "sifre": "gizli-sifre-1"})[0] == 200
+        o = s.istek("GET", "/api/oturum")[1]
+        assert o == {"kurulum": False, "giris": True, "sihirbaz_bitti": True, "kullanici_adi": "ramazan"}
+        ayar = ortak.ajanlari_yukle()[0]["ayarlar"]
+        assert ayar["kullanici"] == "Ramazan" and ayar["marka"] == "CW"
+    finally:
+        s.kapat()
+
+
+def test_bozuk_cerez_401(tmp):
+    s = _sunucu(tmp)
+    try:
+        s.cerez = "ofis_oturum=uydurma; x=;;"
+        assert s.istek("GET", "/api/ajanlar")[0] == 401
+        s.cerez = "bozuk\x00cerez"
+        assert s.istek("GET", "/api/ajanlar")[0] == 401
+    finally:
+        s.kapat()
+
+
+def test_giris_kaba_kuvvet_429(tmp):
+    import hesap
+    s = _sunucu(tmp)
+    try:
+        hesap.hesap_olustur("ramazan", "gizli-sifre-1")
+        hesap.giris_basarili()
+        kodlar = [s.istek("POST", "/api/oturum", {"islem": "giris", "kullanici_adi": "ramazan",
+                                                  "sifre": "yanlis-sifre"})[0] for _ in range(7)]
+        assert kodlar[:6] == [401] * 6 and kodlar[6] == 429
+        d, v, _ = s.istek("POST", "/api/oturum", {"islem": "giris", "kullanici_adi": "ramazan",
+                                                  "sifre": "gizli-sifre-1"})
+        assert d == 429 and v["bekle_sn"] >= 1  # doğru şifre de beklemede reddedilir
+    finally:
+        hesap.giris_basarili()
+        s.kapat()
+
+
+def test_mevcut_kurulum_korunur(tmp):
+    s = _sunucu(tmp)  # _ajanlar: yazar + ceo
+    try:
+        once = ortak.ajanlari_yukle()[0]
+        assert s.istek("GET", "/api/oturum")[1]["kurulum"] is True
+        s.istek("POST", "/api/kurulum", {"adim": "hesap", "kullanici_adi": "ramazan", "sifre": "gizli-sifre-1"})
+        sonra = ortak.ajanlari_yukle()[0]
+        assert sonra["ajanlar"] == once["ajanlar"] and sonra.get("odalar") == once.get("odalar")
+    finally:
+        s.kapat()
+
+
 # ---------- koşucu ----------
 
 def main():
