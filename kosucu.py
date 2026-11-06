@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tek ajan koşusu. tmux penceresinde çalışır: kosucu.py <arguman-dosyasi.json>
+"""Tek ajan koşusu. tmux penceresinde (Windows'ta ayrı konsolda) çalışır: kosucu.py <arguman-dosyasi.json>
 
 - Ajan ayarını (model, cwd, araçlar) argüman dosyasından değil ajanlar.json'dan okur.
 - Görev metni claude'a stdin ile verilir; hiçbir yerde shell'e string olarak birleşmez.
@@ -154,7 +154,8 @@ def kos(arg_dosyasi):
             calisma_dizini = YALIN_DIZIN if ajan.get("yalin") else ajan["cwd"]
             os.makedirs(calisma_dizini, exist_ok=True)
             surec = subprocess.Popen(komut, cwd=calisma_dizini, stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     encoding="utf-8", errors="replace")  # Windows yerel kodlaması cp1254 olabilir
             surec.stdin.write(tam_prompt)
             surec.stdin.close()
             for satir in surec.stdout:

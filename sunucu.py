@@ -90,16 +90,19 @@ def gorev_baslat(ajan_id, etiket=None, prompt=None, kaynak="buton"):
                        "prompt": prompt, "kaynak": kaynak}, f, ensure_ascii=False)
         ortak.durum_yaz(ajan_id, {"durum": "basliyor", "kosu_id": kosu_id, "pid": None,
                                   "baslangic_ts": time.time()})
+        kosucu = [sys.executable, os.path.join(ortak.KOK, "kosucu.py"), arg_yolu]
         try:
-            tmux = tmux_hazirla()
-            subprocess.run([tmux, "new-window", "-d", "-t", f"={TMUX_OTURUM}:", "-n", ajan_id,
-                            "-c", ajan["cwd"], sys.executable,
-                            os.path.join(ortak.KOK, "kosucu.py"), arg_yolu],
-                           check=True, capture_output=True)
+            if sys.platform == "win32":
+                # Windows'ta tmux yok: her koşu kendi konsol penceresinde açılır (canlı izleme o pencerede).
+                subprocess.Popen(kosucu, cwd=ajan["cwd"], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:
+                tmux = tmux_hazirla()
+                subprocess.run([tmux, "new-window", "-d", "-t", f"={TMUX_OTURUM}:", "-n", ajan_id,
+                                "-c", ajan["cwd"], *kosucu], check=True, capture_output=True)
         except (subprocess.CalledProcessError, OSError) as e:
-            ortak.durum_yaz(ajan_id, {"durum": "hata", "kosu_id": kosu_id, "hata": "tmux açılamadı"})
+            ortak.durum_yaz(ajan_id, {"durum": "hata", "kosu_id": kosu_id, "hata": "koşu penceresi açılamadı"})
             ortak.olay_yaz({"tur": "hata", "ajan": ajan_id, "kosu_id": kosu_id,
-                            "detay": f"tmux: {type(e).__name__}"})
+                            "detay": f"pencere: {type(e).__name__}"})
             raise IstekHatasi(500, "koşu başlatılamadı") from e
     return {"kosu_id": kosu_id, "ajan": ajan_id, "tmux": f"{TMUX_OTURUM}:{ajan_id}"}
 
@@ -179,6 +182,7 @@ def ceo_calistir(metin, kuru=False):
     baslangic = time.time()
     try:
         surec = subprocess.run(komut, cwd=ortak.KOK, input=ceo_promptu(metin, tablo), text=True,
+                               encoding="utf-8", errors="replace",
                                capture_output=True, timeout=CEO_ZAMAN_ASIMI)
         with open(os.path.join(ortak.KOSU_DIZINI, f"{ceo_id}.log"), "w", encoding="utf-8") as f:
             f.write(surec.stdout + ("\n--- stderr ---\n" + surec.stderr if surec.stderr else ""))
@@ -337,8 +341,8 @@ class Isleyici(SimpleHTTPRequestHandler):
             raise IstekHatasi(415, "Content-Type application/json olmalı")
         try:
             veri = json.loads(self.rfile.read(uzunluk) or b"{}")
-        except json.JSONDecodeError as e:
-            raise IstekHatasi(400, "geçersiz JSON") from e
+        except ValueError as e:
+            raise IstekHatasi(400, "geçersiz JSON") from e  # JSONDecodeError + UTF-8 olmayan gövde
         if not isinstance(veri, dict):
             raise IstekHatasi(400, "JSON nesne olmalı")
         return veri

@@ -43,6 +43,7 @@ kapatır, `?hafif=1` düşük çözünürlük ve küçük gölgeyle çizer. (Ön
    ```bash
    python3 sunucu.py            # http://127.0.0.1:8796, doluysa sonraki boş port (./port dosyasına yazılır)
    tmux attach -t ofis          # koşan ajanları canlı izle (her koşu ayrı pencere)
+   # Windows: tmux gerekmez; her koşu kendi konsol penceresinde açılır.
    ```
 4. **Tarayıcıda aç:** `http://127.0.0.1:8796`. Bir kediye tıkla → panelden hazır görev ver, ya da alttaki kutudan
    CEO'ya derdini anlat.
