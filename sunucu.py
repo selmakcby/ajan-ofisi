@@ -386,6 +386,46 @@ def kurulum_islem(veri, token):
     raise IstekHatasi(400, "bilinmeyen adım")
 
 
+# ---------- ajan ve oda yönetimi ----------
+
+def ajan_islem(veri):
+    """POST /api/ajanlar: ekle / guncelle / sil / sablon. Doğrulama hatası → 400, çalışan ajanı silme → 409."""
+    islem, ajan = veri.get("islem"), veri.get("ajan")
+    try:
+        if islem in ("ekle", "guncelle") and not isinstance(ajan, dict):
+            raise ValueError("Ajan bilgisi bozuk.")
+        if islem == "ekle":
+            return ajan_yonetimi.ajan_ekle(ajan)
+        if islem == "guncelle":
+            return ajan_yonetimi.ajan_guncelle(str(veri.get("id")), ajan)
+        if islem == "sil":
+            ajan_id = str(veri.get("id"))
+            if ajan_id != "ceo" and ortak.ajan_mesgul(ajan_id):
+                raise IstekHatasi(409, "Ajan şu an çalışıyor; bitince tekrar dene.")
+            ajan_yonetimi.ajan_sil(ajan_id)
+            return {"tamam": True}
+        if islem == "sablon":
+            secili = veri.get("ajanlar")
+            if secili is not None and not (isinstance(secili, list) and all(isinstance(x, str) for x in secili)):
+                raise ValueError("Seçili ajan listesi bozuk.")
+            return ajan_yonetimi.sablondan_ekle(str(veri.get("sablon")), secili)
+        raise ValueError("bilinmeyen işlem")
+    except ValueError as e:
+        raise IstekHatasi(400, str(e)) from e
+
+
+def oda_islem(veri):
+    try:
+        if veri.get("islem") == "ekle":
+            return ajan_yonetimi.oda_ekle(veri.get("ad"), veri.get("tema") or None, veri.get("aciklama") or "")
+        if veri.get("islem") == "guncelle":
+            alanlar = {k: veri[k] for k in ("ad", "aciklama", "tema") if k in veri}
+            return ajan_yonetimi.oda_guncelle(str(veri.get("id")), alanlar)
+        raise ValueError("bilinmeyen işlem")
+    except ValueError as e:
+        raise IstekHatasi(400, str(e)) from e
+
+
 # ---------- okuma uçları ----------
 
 def olaylari_oku():
@@ -561,6 +601,13 @@ class Isleyici(SimpleHTTPRequestHandler):
             return self._json(200, oturum_yaniti(self._token()))
         if yol.path == "/api/ajanlar":
             return self._json(200, ajanlar_yaniti())
+        if yol.path == "/api/sablonlar":
+            return self._json(200, {"sablonlar": ajan_yonetimi.sablon_listesi()})
+        if yol.path.startswith("/api/ajanlar/"):
+            try:  # düzenleme formu: cwd, araçlar, prompt'lar dahil (giriş arkasında)
+                return self._json(200, ajan_yonetimi.ajan_ayrinti(yol.path[len("/api/ajanlar/"):]))
+            except ValueError:
+                return self._json(404, {"hata": "Böyle bir ajan yok."})
         if yol.path == "/api/sayac":
             return self._json(200, sayac_yaniti())
         if yol.path == "/api/token":
@@ -589,6 +636,10 @@ class Isleyici(SimpleHTTPRequestHandler):
                 return self._json(*giris_islem(veri, self._token()))
             if yol == "/api/kurulum":
                 return self._json(*kurulum_islem(veri, self._token()))
+            if yol == "/api/ajanlar":
+                return self._json(200, ajan_islem(veri))
+            if yol == "/api/odalar":
+                return self._json(200, oda_islem(veri))
             if yol == "/api/gorev":
                 ajan = veri.get("ajan")
                 if not isinstance(ajan, str) or not ortak.AJAN_ID_DESENI.match(ajan):

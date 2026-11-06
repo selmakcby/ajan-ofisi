@@ -899,6 +899,7 @@ class _Sunucu:
         from http.server import ThreadingHTTPServer
         import sunucu
         _ajanlar(tmp)
+        sunucu.Isleyici.log_message = lambda *a: None  # test çıktısı okunur kalsın
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), sunucu.Isleyici)
         self.srv.daemon_threads = True
         self.port = self.srv.server_address[1]
@@ -1027,6 +1028,68 @@ def test_mevcut_kurulum_korunur(tmp):
         s.istek("POST", "/api/kurulum", {"adim": "hesap", "kullanici_adi": "ramazan", "sifre": "gizli-sifre-1"})
         sonra = ortak.ajanlari_yukle()[0]
         assert sonra["ajanlar"] == once["ajanlar"] and sonra.get("odalar") == once.get("odalar")
+    finally:
+        s.kapat()
+
+
+# ---------- Kurulum T5: ajan, oda ve şablon uçları ----------
+
+def test_ajan_uclari(tmp):
+    s = _sunucu(tmp)
+    s.giris()
+    try:
+        d, a, _ = s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": {"ad": "Muhasebeci",
+                                                                          "yeni_oda": {"ad": "Muhasebe"}}})
+        assert d == 200 and any(x["id"] == a["id"] for x in s.istek("GET", "/api/ajanlar")[1]["ajanlar"])
+        liste = s.istek("GET", "/api/ajanlar")[1]
+        assert "cwd" not in next(x for x in liste["ajanlar"] if x["id"] == a["id"])
+        assert any(o["id"] == "muhasebe" for o in liste["odalar"])
+        ayrinti = s.istek("GET", f"/api/ajanlar/{a['id']}")[1]
+        assert "cwd" in ayrinti and ayrinti["yetkiler"] == ["okuma"]
+        assert s.istek("GET", "/api/ajanlar/olmayan")[0] == 404
+        d, g, _ = s.istek("POST", "/api/ajanlar", {"islem": "guncelle", "id": a["id"], "ajan": {"model": "haiku"}})
+        assert d == 200 and g["model"] == "haiku"
+        assert s.istek("POST", "/api/ajanlar", {"islem": "sil", "id": "ceo"})[0] == 400
+        ortak.durum_yaz(a["id"], {"durum": "calisiyor", "pid": os.getpid()})
+        assert s.istek("POST", "/api/ajanlar", {"islem": "sil", "id": a["id"]})[0] == 409
+        ortak.durum_yaz(a["id"], {"durum": "bitti"})
+        assert s.istek("POST", "/api/ajanlar", {"islem": "sil", "id": a["id"]})[0] == 200
+        r = s.istek("POST", "/api/ajanlar", {"islem": "sablon", "sablon": "egitim", "ajanlar": None})[1]
+        assert r["eklenen"]
+        sablonlar = s.istek("GET", "/api/sablonlar")[1]["sablonlar"]
+        assert len(sablonlar) == 7 and "prompt" not in json.dumps(sablonlar)
+        assert s.istek("POST", "/api/odalar", {"islem": "ekle", "ad": "Arşiv", "tema": "veri"})[0] == 200
+        assert s.istek("POST", "/api/odalar", {"islem": "guncelle", "id": "arsiv", "ad": "Eski Dosyalar"})[0] == 200
+        assert s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": {"ad": ""}})[0] == 400
+        assert s.istek("POST", "/api/ajanlar", {"islem": "uydurma"})[0] == 400
+        assert s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": "metin"})[0] == 400
+    finally:
+        s.kapat()
+
+
+def test_ajan_uclari_girissiz_401(tmp):
+    s = _sunucu(tmp)
+    try:
+        assert s.istek("GET", "/api/sablonlar")[0] == 401
+        assert s.istek("GET", "/api/ajanlar/ceo")[0] == 401
+        assert s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": {"ad": "Sızma"}})[0] == 401
+        assert s.istek("POST", "/api/odalar", {"islem": "ekle", "ad": "X"})[0] == 401
+    finally:
+        s.kapat()
+
+
+def test_silinen_ajana_gorev_404(tmp):
+    import sunucu
+    s = _sunucu(tmp)
+    s.giris()
+    try:
+        a = s.istek("POST", "/api/ajanlar", {"islem": "ekle", "ajan": {"ad": "Geçici"}})[1]
+        s.istek("POST", "/api/ajanlar", {"islem": "sil", "id": a["id"]})
+        try:
+            sunucu.gorev_baslat(a["id"], prompt="x")
+            raise AssertionError
+        except sunucu.IstekHatasi as e:
+            assert e.kod == 404
     finally:
         s.kapat()
 
