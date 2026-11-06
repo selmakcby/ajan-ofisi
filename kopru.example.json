@@ -1,49 +1,14 @@
 {
-  "_not": "Ajan Ofisi canlı terminal köprüsü eşlemesi. Claude Code terminal, tmux ve masaüstü oturumlarını ilgili departmanlara yönlendirir. Eşleme önceliği pencere > cwd > varsayilan şeklindedir.",
+  "_not": "Canlı terminal köprüsü eşlemesi. kopru.json olarak kopyala (dosya yoksa da çalışır). Açtığın her Claude Code oturumu (terminal, tmux ya da Claude masaüstü uygulaması) ofiste görünür. Eşleme sırası: 'pencere' (tmux pencere adı) > 'cwd' (klasör ya da üst klasörü; alt klasörde açılan oturum da eşlenir) > 'varsayilan'. 'varsayilan' yazılmazsa eşleşmeyen oturum ilk ajanda görünür; \"\" yazarsan eşleşmeyenler gizlenir. 'gizle' listesindeki parçayı cwd'sinde ya da tmux oturum adında taşıyan oturum hiçbir eşlemeyle gösterilmez; 'atla_cwd' tam klasörü atlar.",
   "cwd": {
-    "C:\\AjanOfisi\\Backend": "backend-gelistirici",
-    "C:\\AjanOfisi\\Frontend": "frontend-gelistirici",
-    "C:\\AjanOfisi\\FullStack": "fullstack-gelistirici",
-    "C:\\AjanOfisi\\DevOps": "devops-muhendisi",
-    "C:\\AjanOfisi\\QA": "qa-muhendisi",
-    "C:\\AjanOfisi\\Security": "guvenlik-uzmani",
-    "C:\\AjanOfisi\\Architecture": "cto",
-    "C:\\AjanOfisi\\Product": "urun-yoneticisi",
-    "C:\\AjanOfisi\\Design": "ui-ux-tasarimci",
-    "C:\\AjanOfisi\\Research": "arastirmaci",
-    "C:\\AjanOfisi\\Documentation": "dokumantasyon-uzmani",
-    "C:\\AjanOfisi\\Marketing": "pazarlama-uzmani"
+    "/path/to/your/project": "blog-yazari"
   },
   "pencere": {
-    "C:\\AjanOfisi": {
-      "CEO": "ceo",
-      "CTO": "cto",
-      "Backend": "backend-gelistirici",
-      "Frontend": "frontend-gelistirici",
-      "FullStack": "fullstack-gelistirici",
-      "QA": "qa-muhendisi",
-      "DevOps": "devops-muhendisi",
-      "Security": "guvenlik-uzmani",
-      "Product": "urun-yoneticisi",
-      "Design": "ui-ux-tasarimci",
-      "Research": "arastirmaci",
-      "Documentation": "dokumantasyon-uzmani",
-      "Marketing": "pazarlama-uzmani"
+    "/path/to/your/monorepo": {
+      "tmux-pencere-adi": "kod-inceleyici"
     }
   },
-  "varsayilan": "ceo",
-  "atla_cwd": [
-    "C:\\Windows",
-    "C:\\Program Files",
-    "C:\\Program Files (x86)",
-    "C:\\$Recycle.Bin"
-  ],
-  "gizle": [
-    ".git",
-    "node_modules",
-    ".vs",
-    ".idea",
-    "bin",
-    "obj"
-  ]
+  "varsayilan": "kod-inceleyici",
+  "atla_cwd": [],
+  "gizle": []
 }
