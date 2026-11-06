@@ -17,6 +17,7 @@ import urllib.request
 from datetime import datetime
 
 import ortak
+import projeler
 import sorular
 
 TELEGRAM_SINIR = 4096          # Telegram UTF-16 birimi sayar (emoji = 2); kisalt da öyle sayar
@@ -26,6 +27,8 @@ MAKS_BEKLEME = 300
 AJAN_DESENI = re.compile(r"^@(\S+?):?(?:\s+(.*))?$", re.S)  # @Ad, @ad: ve boş gövde de yakalanır
 RAPOR_MADDE = re.compile(r"^\s*(\d+)\s+(.+)$", re.S)
 ESLESTIR = re.compile(r"^/baslat\s+(\d{6})$")
+PROJELER_KOMUTU = re.compile(r"^/projeler(?:@\S+)?\s*$")
+PROJE_KOMUTU = re.compile(r"^/proje(?:@\S+)?(?:\s+(.*))?$", re.S)
 TOKEN_DESENI = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 PANEL_SAAT = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
@@ -59,6 +62,17 @@ def yonlendir(metin, yanit_hedefi, tablo):
     e = ESLESTIR.match(metin)
     if e:
         return {"tip": "eslestir", "kod": e.group(1)}
+    if PROJELER_KOMUTU.match(metin):
+        return {"tip": "projeler"}
+    e = PROJE_KOMUTU.match(metin)
+    if e:
+        govde = (e.group(1) or "").strip()
+        kesimler = [i for i in (govde.find(" — "), govde.find("\n")) if i >= 0]
+        baslik, aciklama = (govde[:min(kesimler)], govde[min(kesimler):]) if kesimler else (govde, "")
+        baslik, aciklama = baslik.strip(), aciklama.strip().removeprefix("—").strip()
+        if not baslik:
+            return {"tip": "hata", "mesaj": "/proje yazdıktan sonra proje başlığını yaz."}
+        return {"tip": "proje_ekle", "baslik": baslik, "aciklama": aciklama}
     h = yanit_hedefi or {}
     if h.get("soru_id"):  # her tür soru (ajan, toplantı, bitti mi) tek cevap yolundan
         return {"tip": "soru", "soru_id": h["soru_id"], "cevap": metin}
@@ -251,6 +265,14 @@ class Bot:
                 self._devam(mesaj, y)
             elif y["tip"] == "soru":
                 self._cevapla(mesaj, self.soru_cevapla(y["soru_id"], y["cevap"], "kullanici-telegram"))
+            elif y["tip"] == "proje_ekle":
+                p = projeler.ekle(y["baslik"], y["aciklama"])
+                self._cevapla(mesaj, f"📁 Proje eklendi: {p['baslik']}. Sabah toplantısında CEO ele alacak.")
+            elif y["tip"] == "projeler":
+                lst = [p for p in projeler.liste() if p.get("durum") in ("acik", "onay_bekliyor")]
+                self._cevapla(mesaj, "\n".join(
+                    f"• {p['baslik']} — %{p.get('ilerleme', 0)} "
+                    f"({'onay bekliyor' if p['durum'] == 'onay_bekliyor' else 'açık'})" for p in lst) or "Açık proje yok.")
             else:
                 self._ceo(mesaj, y)
         except Exception as e:  # noqa: BLE001 — IstekHatasi dahil: kullanıcıya kısa açıklama

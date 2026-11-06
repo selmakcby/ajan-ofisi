@@ -2149,6 +2149,90 @@ def test_toplanti_ceo_hatasi_bildirilir(tmp):
     assert mesaj[0][0].startswith("⚠ Sabah toplantısı yapılamadı") and len(mesaj) == 1 and basla == []
 
 
+# ---------- Projeler/sorular uçları, Telegram komutları (T6) ----------
+
+def test_api_projeler_ve_sorular(tmp):
+    import sorular
+    import sunucu
+    s = _sunucu(tmp)
+    s.giris()
+    try:
+        d, v, _ = s.istek("GET", "/api/projeler")
+        assert d == 200 and v["projeler"] == [] and v["toplanti"]["saatler"]["sabah"] == "09:00"
+        d, v, _ = s.istek("POST", "/api/projeler", {"islem": "ekle", "baslik": "Site", "oncelik": "yuksek"})
+        assert d == 200 and v["proje"]["oncelik"] == "yuksek"
+        pid = v["proje"]["id"]
+        assert s.istek("POST", "/api/projeler", {"islem": "ekle", "baslik": ""})[0] == 400
+        assert s.istek("POST", "/api/projeler", {"islem": "not", "id": pid, "metin": "mavi olsun"})[0] == 200
+        assert s.istek("POST", "/api/projeler", {"islem": "saatler", "sabah": "25:00", "aksam": "17:00"})[0] == 400
+        assert s.istek("POST", "/api/projeler", {"islem": "saatler", "sabah": "08:30", "aksam": "17:00"})[0] == 200
+        assert s.istek("POST", "/api/projeler", {"islem": "uydur"})[0] == 400
+        sorular.soru_ekle("yazar", "k1", "s1", "Onay?", "diger")
+        sorular.soru_guncelle("k1", durum="kullanicida")
+        b = s.istek("GET", "/api/sorular")[1]
+        assert b["bekleyen"][0]["soru_id"] == "k1" and 0 < b["bekleyen"][0]["kalan_sn"] <= 3600
+        cagri = []
+        eski = sunucu.IZLEYICI.gorev_baslat
+        sunucu.IZLEYICI.gorev_baslat = lambda a, **k: cagri.append(a) or {}
+        try:
+            assert s.istek("POST", "/api/sorular", {"islem": "cevapla", "soru_id": "k1", "cevap": ""})[0] == 400
+            m = s.istek("POST", "/api/sorular", {"islem": "cevapla", "soru_id": "k1", "cevap": "evet"})[1]["mesaj"]
+            assert "devam" in m
+        finally:
+            sunucu.IZLEYICI.gorev_baslat = eski
+        assert cagri == ["yazar"] and s.istek("GET", "/api/sorular")[1]["bekleyen"] == []
+        assert s.istek("GET", "/api/sorular")[1]["son"][0]["soru_id"] == "k1"
+        for yol in ("/api/projeler", "/api/sorular"):
+            s.cerez = None
+            assert s.istek("GET", yol)[0] == 401
+    finally:
+        s.kapat()
+
+
+def test_api_proje_onay_bitti_sorusunu_kapatir(tmp):
+    import projeler
+    import sorular
+    s = _sunucu(tmp)
+    s.giris()
+    try:
+        p = projeler.ekle("Site")
+        projeler.onay_iste(p["id"], "bitti")
+        sorular.soru_ekle("ceo", "b1", None, "bitti mi?", "diger", kaynak="bitti_mi", proje_id=p["id"])
+        sorular.soru_guncelle("b1", durum="kullanicida")
+        assert s.istek("POST", "/api/projeler", {"islem": "onayla", "id": p["id"]})[0] == 200
+        assert projeler.al(p["id"])["durum"] == "kapali" and sorular.soru_al("b1")["durum"] == "cevaplandi"
+        q = projeler.ekle("Blog")
+        projeler.onay_iste(q["id"], "bitti")                     # sorusu yok: doğrudan
+        assert s.istek("POST", "/api/projeler", {"islem": "reddet", "id": q["id"], "metin": "footer"})[0] == 200
+        assert projeler.al(q["id"])["durum"] == "acik"
+    finally:
+        s.kapat()
+
+
+def test_telegram_proje_komutlari():
+    import telegram_kopru as tk
+    assert tk.yonlendir("/proje Web sitesi — yeni tasarım", None, {}) == {
+        "tip": "proje_ekle", "baslik": "Web sitesi", "aciklama": "yeni tasarım"}
+    assert tk.yonlendir("/proje Blog\nhaftada bir yazı", None, {}) == {
+        "tip": "proje_ekle", "baslik": "Blog", "aciklama": "haftada bir yazı"}
+    assert tk.yonlendir("/proje Tek başlık", None, {}) == {"tip": "proje_ekle", "baslik": "Tek başlık", "aciklama": ""}
+    assert tk.yonlendir("/proje", None, {})["tip"] == "hata"
+    assert tk.yonlendir("/projeler", None, {}) == {"tip": "projeler"}
+
+
+def test_telegram_proje_ekle_bot(tmp):
+    import projeler
+    bot, api, _ = _bot(tmp)
+    bot.isle(_mesaj("/proje Site — yeni", gonderen=99, uid=1))      # eşleşmemiş hesap
+    assert projeler.liste() == [] and api.gonderilen == []
+    bot.isle(_mesaj("/proje Site — yeni", uid=2))
+    assert projeler.liste()[0]["baslik"] == "Site" and api.gonderilen[-1][1].startswith("📁 Proje eklendi: Site.")
+    bot.isle(_mesaj("/projeler", uid=3))
+    assert "• Site — %0 (açık)" in api.gonderilen[-1][1]
+    bot.isle(_mesaj("/proje " + "x" * 200, uid=4))
+    assert api.gonderilen[-1][1].startswith("⚠")
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")  # Windows'ta yönlendirilmiş çıktı cp1254 olabilir
     sys.stderr.reconfigure(encoding="utf-8")

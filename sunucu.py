@@ -727,6 +727,10 @@ class Isleyici(SimpleHTTPRequestHandler):
             return self._json(200, hafiza_yaniti())
         if yol.path == "/api/telegram":
             return self._json(200, TELEGRAM.durum())
+        if yol.path == "/api/projeler":
+            return self._json(200, {"projeler": projeler.liste(), "toplanti": TOPLANTI.ozet_durum()})
+        if yol.path == "/api/sorular":
+            return self._json(200, sorular_yaniti())
         if yol.path == "/api/claude":
             return self._json(200, claude_baglanti.durum())
         if yol.path == "/api/terminaller":
@@ -772,6 +776,10 @@ class Isleyici(SimpleHTTPRequestHandler):
                     return self._json(200, TELEGRAM.islem(veri))
                 except ValueError as e:
                     raise IstekHatasi(400, str(e)) from e
+            if yol == "/api/projeler":
+                return self._json(200, proje_islem(veri))
+            if yol == "/api/sorular":
+                return self._json(200, soru_islem(veri))
             if yol == "/api/ceo":
                 metin = veri.get("metin")
                 if not isinstance(metin, str) or not metin.strip():
@@ -836,6 +844,63 @@ class Isleyici(SimpleHTTPRequestHandler):
         self.wfile.write(f"event: {olay.get('tur', 'olay')}\ndata: {json.dumps(olay, ensure_ascii=False)}\n\n"
                          .encode("utf-8"))
         self.wfile.flush()
+
+
+def proje_islem(veri):
+    """Projeler sayfası. onayla/reddet: bekleyen 'bitti mi?' sorusu varsa onun cevabı olarak (tek yol)."""
+    islem, pid = veri.get("islem"), veri.get("id")
+    try:
+        if islem == "ekle":
+            return {"proje": projeler.ekle(veri.get("baslik"), veri.get("aciklama") or "", veri.get("oncelik") or "orta",
+                                           veri.get("hedef_tarih") or None)}
+        if islem == "guncelle":
+            return {"proje": projeler.guncelle(pid, **{k: veri[k] for k in ("baslik", "aciklama", "oncelik",
+                                                                             "hedef_tarih") if k in veri})}
+        if islem == "not":
+            projeler.not_ekle(pid, veri.get("metin"), "kullanici")
+            return {"proje": projeler.al(pid)}
+        if islem == "kapat":
+            return {"proje": projeler.kapat(pid)}
+        if islem in ("onayla", "reddet"):
+            metin = "evet" if islem == "onayla" else (veri.get("metin") or "Henüz bitmedi.")
+            if not isinstance(metin, str) or len(metin) > ortak.MAKS_GIRDI:
+                raise ValueError("Açıklama metin olmalı ve çok uzun olmamalı.")
+            soru = next((s for s in sorular.bekleyen_sorular()
+                         if s.get("kaynak") == "bitti_mi" and s.get("proje_id") == pid), None)
+            if soru:
+                return {"mesaj": IZLEYICI.soru_cevapla(soru["soru_id"], metin, "kullanici-web"),
+                        "proje": projeler.al(pid)}
+            return {"proje": projeler.onayla(pid) if islem == "onayla" else projeler.reddet(pid, metin)}
+        if islem == "saatler":
+            return {"saatler": toplanti.saatler_ayarla(veri.get("sabah"), veri.get("aksam"))}
+    except (ValueError, TypeError) as e:
+        raise IstekHatasi(400, str(e)) from e
+    raise IstekHatasi(400, "bilinmeyen işlem")
+
+
+def sorular_yaniti():
+    simdi = time.time()
+    bekleyen = []
+    for s in sorular.bekleyen_sorular():
+        try:
+            kalan = max(0, int(datetime.fromisoformat(s["zaman"]).timestamp() + akis.ZAMAN_ASIMI_SN - simdi))
+        except (KeyError, TypeError, ValueError):
+            kalan = None
+        p = projeler.al(s.get("proje_id")) if s.get("proje_id") else None
+        bekleyen.append({**s, "kalan_sn": None if s.get("kaynak") == "bitti_mi" else kalan,
+                         "proje_baslik": (p or {}).get("baslik")})
+    return {"bekleyen": bekleyen, "son": sorular.son_cevaplananlar(20)}
+
+
+def soru_islem(veri):
+    cevap, soru_id = veri.get("cevap"), veri.get("soru_id")
+    if veri.get("islem") != "cevapla" or not isinstance(soru_id, str):
+        raise IstekHatasi(400, "bilinmeyen işlem")
+    if not isinstance(cevap, str) or not cevap.strip():
+        raise IstekHatasi(400, "Cevap boş olamaz.")
+    if len(cevap) > ortak.MAKS_GIRDI:
+        raise IstekHatasi(413, f"Cevap en fazla {ortak.MAKS_GIRDI} karakter olabilir.")
+    return {"mesaj": IZLEYICI.soru_cevapla(soru_id, cevap.strip(), "kullanici-web")}
 
 
 def toplanti_ceo_json(prompt, log_id):

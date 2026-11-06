@@ -260,6 +260,28 @@ kendi cevap verir, 4. soru sana gelir. Cevap beklerken ajan token harcamaz; aray
 saatinde (varsayılan 18:00) numaralı tek mesaj olarak gelir; rapora Yanıtla ile `2 geri al` yazarsan 2. maddenin
 ajanına döner. Rapor model çağırmadan kayıtlardan derlenir.
 
+### Projeler ve günlük toplantılar
+Ofise bir hedef bırakırsın, CEO günlük işleri kendisi planlar. Proje eklemenin iki yolu var: web'de **Projeler**
+sekmesi (başlık, açıklama, öncelik, hedef tarih) ya da Telegram'dan `/proje Başlık — açıklama` (`/projeler` listeler).
+
+- **Toplantılar yalnız açık proje varken yapılır.** Her gün 09:00'da "Bugün ne yapacağız?": CEO planı çıkarır, projeyi
+  görevlere böler, ajanlara iş dağıtır (ajan başına günde bir iş). 17:00'de "Bugün ne yaptık?": günün koşularını
+  özetler, görevleri ve ilerleme yüzdesini günceller. Saatler Projeler sekmesinden değişir. Sunucu toplantı saatinde
+  kapalıysa 3 saat içinde açılırsa toplantı yine yapılır; daha geç açılırsa o gün atlanır.
+- **Sonuç Telegram'a gelir**, CEO'nun soruları tek tek ayrı mesaj olarak gelir. Yanıtla ile ya da web'deki **Sorular**
+  sekmesinden cevaplarsın. Her soru bir kez cevaplanır.
+- **1 saat kuralı:** sana gelen bir soru 1 saat cevapsız kalırsa CEO sorumluluğu alır. Maliyet, büyük değişiklik ve
+  yayın/mail/para sorularında model bile çağrılmaz, sabit "güvenli taraf" cevabı gider: o kısım yapılmaz, gerisine
+  devam edilir. Ne cevaplandığı sana ayrıca bildirilir.
+- **Bitti mi?** CEO bir projenin bittiğini düşünürse sorar. "evet" dersen proje kapanır, başka bir şey yazarsan açık
+  kalır ve yazdığın not CEO'ya gider. Bu soru zaman aşımına girmez; onaylayana kadar her sabah hatırlatılır.
+- **3B toplantı odası:** toplantıda çağrılan kediler odaya gelip masaya oturur (CEO başta, diğerleri Ajanlar
+  sayfasındaki sırayla), duvardaki TV konuyu ve projeleri gösterir. Ajanlar toplantıda konuşmaz, yalnız miyavlar.
+- **Maliyet:** toplantı başına tek bir CEO çağrısı (açık proje varken günde 2). Açık proje yoksa 0 token.
+- **Gizlilik:** proje takibini yalnız sen ve CEO görürsün. Sunucu sürümünde dosyalar ajanların okuyamadığı gizli
+  klasördedir. Yerelde ajanlara izin kuralıyla yasaktır (`.env` gibi); komut çalıştırma yetkisi açık bir ajan için
+  bu tam bir engel değildir.
+
 ### API
 | Uç | Ne |
 |---|---|
@@ -279,6 +301,8 @@ ajanına döner. Rapor model çağırmadan kayıtlardan derlenir.
 | `GET /api/hafiza` | `hafiza/<ajan>.md` başına madde sayısı ve son 3 madde |
 | `GET /api/telegram` | Telegram bağlantı durumu (token hiç dönmez, yalnız son 4 karakter) |
 | `POST /api/telegram` | `{"islem": "token"\|"kod"\|"rapor_saati"\|"test"\|"kaldir", …}` |
+| `GET /api/projeler` · `POST /api/projeler` | projeler + toplantı durumu/tutanakları · `{"islem": "ekle"\|"guncelle"\|"not"\|"kapat"\|"onayla"\|"reddet"\|"saatler", …}` |
+| `GET /api/sorular` · `POST /api/sorular` | sana bekleyen sorular (`kalan_sn`: CEO'nun cevaplamasına kalan) ve son cevaplananlar · `{"islem": "cevapla", "soru_id", "cevap"}` |
 
 ## Güvenlik notları
 - **Giriş zorunlu.** Statik sayfa ve `/api/oturum`, `/api/kurulum` dışındaki tüm `/api/*` uçları (canlı olay akışı ve
