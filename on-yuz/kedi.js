@@ -300,10 +300,11 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
   const uyaniyor = () => uyanT >= 0 && t - uyanT < 1.1;
 
   // eğlence odası araçları: oyun kolu ve ıstaka kökte durur (pozla birlikte gelir), yalnız ilgili durumda görünür
-  const joypad = new THREE.Group(); joypad.position.set(0, .4, .34); joypad.rotation.x = -.5; joypad.visible = false; kok.add(joypad);
-  mesh(joypad, GEO.kure, ORTAK.joypad, [0, 0, 0], [.13, .035, .07], false);
-  [-1, 1].forEach(s => mesh(joypad, GEO.kure, ORTAK.joypad, [s * .1, -.015, -.02], [.05, .04, .06], false));
-  [[-.05, '#ff7a59'], [.05, '#7fc8a9']].forEach(([x, r]) => mesh(joypad, GEO.kure, ORTAK.dugme(r), [x, .03, .01], [.016, .01, .016], false));
+  // oyun kolu iki pati ucunun arasında: oyunda patiler yatay öne uzanır, uçları (±.11, .53, .61); yüzü kediye eğik
+  const joypad = new THREE.Group(); joypad.position.set(0, .52, .6); joypad.rotation.x = -.4; joypad.visible = false; kok.add(joypad);
+  mesh(joypad, GEO.kure, ORTAK.joypad, [0, 0, 0], [.15, .042, .08], false);
+  [-1, 1].forEach(s => mesh(joypad, GEO.kure, ORTAK.joypad, [s * .12, -.02, -.035], [.06, .05, .07], false)); // tutamaklar
+  [[-.06, '#ff7a59'], [.06, '#7fc8a9'], [.025, '#f2c14e'], [-.025, '#6cc3c8']].forEach(([x, r]) => mesh(joypad, GEO.kure, ORTAK.dugme(r), [x, .038, .012], [.018, .012, .018], false));
   const istaka = new THREE.Group(); istaka.position.set(.07, .6, -.4); istaka.visible = false; kok.add(istaka);
   const sopa = mesh(istaka, GEO.kure, ORTAK.istaka, [0, 0, .7], [.016, .016, .78], false);
   mesh(istaka, GEO.kure, ORTAK.istakaUc, [0, 0, 1.47], [.017, .017, .03], false);
