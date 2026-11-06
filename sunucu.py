@@ -28,6 +28,8 @@ import telegram_kopru  # noqa: E402
 import hesap  # noqa: E402
 import ajan_yonetimi  # noqa: E402
 import claude_baglanti  # noqa: E402
+import projeler  # noqa: E402
+import toplanti  # noqa: E402
 
 HOST = os.environ.get("OFIS_HOST", "127.0.0.1")  # Docker: 0.0.0.0 (port Compose'da 127.0.0.1'e açılır)
 def alan_adi_coz(deger):
@@ -836,9 +838,17 @@ class Isleyici(SimpleHTTPRequestHandler):
         self.wfile.flush()
 
 
+def toplanti_ceo_json(prompt, log_id):
+    """Toplantı: CEO modeliyle araçsız, şemalı tek çağrı (zamanlayıcının iş parçacığında)."""
+    _, tablo = ortak.ajanlari_yukle()
+    model = (tablo.get("ceo") or {}).get("model") or "sonnet"
+    return claude_json(prompt, model, toplanti.TOPLANTI_SEMASI, log_id)["veri"]
+
+
 TELEGRAM = telegram_kopru.Yonetici(gorev_baslat, ceo_calistir, soru_cevapla=lambda *a: IZLEYICI.soru_cevapla(*a))
+TOPLANTI = toplanti.Toplanti(toplanti_ceo_json, gorev_baslat, TELEGRAM.bildir, ofis_durumu_metni)
 IZLEYICI = akis.Izleyici(gorev_baslat, ceo_triyaj, TELEGRAM.bildir, ceo_calistir=ceo_calistir,
-                         zaman_asimi_cevabi=ceo_zaman_asimi)
+                         zaman_asimi_cevabi=ceo_zaman_asimi, zamanlayici=TOPLANTI.tik)
 
 
 def bos_port_ile_ac():

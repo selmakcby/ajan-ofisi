@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 import ortak
 import projeler
+import sorular
 
 KILIT = threading.RLock()
 SURE_SN = 300
@@ -268,3 +269,217 @@ def toplanti_dogrula(tur, veri, tablo, projeler_listesi):
     return {"ozet": veri["ozet"].strip()[:OZET_MAKS], "katilimcilar": katilimcilar, "gorevler": gorevler,
             "ilerleme": ilerleme, "atamalar": atamalar, "reddedilen": reddedilen, "sorular": soru_listesi,
             "bitti_mi": bitti}
+
+
+# ---------- günün koşuları (akşam girdisi) ----------
+
+def bugunku_kosular(gun):
+    """olaylar.jsonl'den o günün kosu_bitti olayları, proje eşlemesiyle. Bozuk satır atlanır."""
+    try:
+        with open(ortak.OLAYLAR, encoding="utf-8", errors="replace") as f:
+            satirlar = f.readlines()
+    except FileNotFoundError:
+        return []
+    eslesme = {e.get("kosu_id"): e for e in durum()["eslesme"]}
+    sonuc = []
+    for s in satirlar:
+        try:
+            o = json.loads(s)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(o, dict) or o.get("tur") != "kosu_bitti" or not str(o.get("zaman", "")).startswith(gun):
+            continue
+        e = eslesme.get(o.get("kosu_id")) or {}
+        sonuc.append({"ajan": o.get("ajan"), "durum": o.get("durum"), "ozet": str(o.get("ozet") or "")[:300],
+                      "cikti": str(o.get("cikti") or "")[:500], "kosu_id": o.get("kosu_id"),
+                      "proje_id": e.get("proje_id"), "gorev_id": e.get("gorev_id")})
+    return sonuc
+
+
+def _arka(islev, *arg):
+    threading.Thread(target=islev, args=arg, name="toplanti", daemon=True).start()
+
+
+def _gecti(iso):
+    try:
+        return datetime.fromisoformat(iso) <= datetime.now().astimezone()
+    except (TypeError, ValueError):
+        return True  # bozuk bitiş: toplantı takılı kalmasın
+
+
+# ---------- akış ----------
+
+class Toplanti:
+    def __init__(self, ceo_json, gorev_baslat, bildir, ofis_durumu=lambda tablo: "", mesgul_mu=ortak.ajan_mesgul,
+                 arka=None):
+        self.ceo_json = ceo_json            # (prompt, log_id) -> şemaya uyan dict
+        self.gorev_baslat = gorev_baslat
+        self.bildir = bildir                # (metin, hedef) -> mesaj id | None
+        self.ofis_durumu = ofis_durumu
+        self.mesgul_mu = mesgul_mu
+        self.arka = arka or _arka
+
+    def tik(self, simdi=None):
+        """İzleyici döngüsünden 30 sn'de bir çağrılır. Açık proje yoksa model çağrısı yapılmaz."""
+        simdi = simdi or datetime.now()
+        d = durum()
+        if d["aktif"] and _gecti(d["aktif"].get("bitis")):
+            self.bitir()
+        self._bekleyenleri_baslat()
+        self._hatirlat(simdi)
+        bugun = simdi.date().isoformat()
+
+        def isaretle(d):
+            tur = zamani_gelen(simdi, d, bool(projeler.acik_projeler()))
+            if tur:
+                d["son"][tur] = bugun  # önce işaret: çökse ya da yeniden başlasa da bugün tekrar yapılmaz
+            return tur
+        tur = degistir(isaretle)
+        if tur:
+            self.arka(self.yap, tur, bugun)
+
+    def yap(self, tur, gun=None):
+        if not projeler.acik_projeler():
+            return
+        gun = gun or datetime.now().date().isoformat()
+        _, tablo = ortak.ajanlari_yukle()
+        d = durum()
+        onceki = next((t.get("ozet") for t in reversed(d["tutanaklar"]) if t.get("tur") == "aksam"), "")
+        prompt = toplanti_promptu(tur, tablo, projeler.liste(), self.ofis_durumu(tablo),
+                                  bugunku_kosular(gun) if tur == "aksam" else [], onceki, d["bekleyen_atamalar"])
+        try:
+            s = toplanti_dogrula(tur, self.ceo_json(prompt, f"{datetime.now():%Y-%m-%d-%H%M%S}-toplanti-{tur}"),
+                                 tablo, projeler.liste())
+        except Exception as e:  # noqa: BLE001 — model/şema/bağlantı hatası: bugünkü toplantı yapılmaz
+            ortak.olay_yaz({"tur": "toplanti_hata", "toplanti_tur": tur, "hata": str(e)[:200]})
+            self.bildir(f"⚠ {'Sabah' if tur == 'sabah' else 'Akşam'} toplantısı yapılamadı: {str(e)[:200]}", None)
+            return
+        for g in s["gorevler"]:
+            try:
+                projeler.gorev_yaz(g["proje_id"], g["gorev_id"], g["baslik"], g["ajan"], g["durum"])
+            except ValueError:
+                pass
+        for i in s["ilerleme"]:
+            try:
+                projeler.ilerleme_yaz(i["proje_id"], i["yuzde"])
+            except ValueError:
+                pass
+        simdi = datetime.now().astimezone()
+        aktif = {"tur": tur, "konu": KONU[tur], "baslangic": simdi.isoformat(timespec="seconds"),
+                 "bitis": (simdi + timedelta(seconds=SURE_SN)).isoformat(timespec="seconds"),
+                 **{k: s[k] for k in ("katilimcilar", "ozet", "atamalar", "sorular", "bitti_mi", "reddedilen")}}
+        degistir(lambda d: d.update(aktif=aktif))
+        ortak.olay_yaz({"tur": "toplanti_basladi", "toplanti_tur": tur, "konu": aktif["konu"],
+                        "katilimcilar": aktif["katilimcilar"], "ozet": aktif["ozet"], "bitis": aktif["bitis"],
+                        "projeler": [{"baslik": p.get("baslik"), "ilerleme": p.get("ilerleme", 0)}
+                                     for p in projeler.acik_projeler()]})
+
+    def bitir(self):
+        def al(d):
+            a = d.get("aktif")
+            if not a:
+                return None
+            d["aktif"] = None  # önce kayıt: yan etkiler en fazla bir kez
+            d["tutanaklar"] = (d["tutanaklar"] + [{
+                "tur": a.get("tur"), "zaman": a.get("baslangic"), "ozet": a.get("ozet"),
+                "katilimcilar": a.get("katilimcilar"), "atamalar": a.get("atamalar") or [],
+                "sorular": a.get("sorular") or []}])[-TUTANAK_MAKS:]
+            if a.get("tur") == "sabah":  # yeni sabah ataması eski bekleyeninin yerini alır
+                for x in a.get("atamalar") or []:
+                    d["bekleyen_atamalar"].pop(x.get("ajan"), None)
+            return a
+        a = degistir(al)
+        if not a:
+            return
+        tur = a.get("tur")
+        satirlar = []
+        for x in (a.get("atamalar") or []) if tur == "sabah" else []:
+            etiket = self._gorev_basligi(x) or (x.get("prompt") or "")[:60]
+            sonuc = self._atama_baslat(x)
+            if sonuc == "basladi":
+                satirlar.append(f"▶ {x['ajan']}: {etiket}")
+            elif sonuc == "kuyruk":
+                satirlar.append(f"⏳ {x['ajan']}: {etiket} (meşgul; boşalınca başlayacak)")
+            else:
+                satirlar.append(f"✗ {x['ajan']}: {sonuc}")
+        ortak.olay_yaz({"tur": "toplanti_bitti", "toplanti_tur": tur})
+        if tur == "sabah":
+            baslik = f"🗓 Sabah toplantısı — {KONU['sabah']}"
+        else:
+            baslik = f"🌆 Akşam toplantısı — {KONU['aksam']}"
+            satirlar = [f"📊 {p.get('baslik')}: %{p.get('ilerleme', 0)}" for p in projeler.acik_projeler()]
+        self.bildir("\n".join([baslik, a.get("ozet") or "", *satirlar]).strip(), None)
+        zaman = datetime.now().strftime("%Y%m%d%H%M%S")
+        for i, q in enumerate(a.get("sorular") or []):
+            p = projeler.al(q.get("proje_id"))
+            if not p or p.get("durum") != "acik":
+                continue  # toplantı sürerken kapanmış/silinmiş
+            metin = (f"❓ CEO soruyor ({p.get('baslik')}): {q['soru']}\nCevap için bu mesajı Yanıtla. "
+                     "1 saat içinde cevap gelmezse güvenli tarafta karar verilir.")
+            self._soru_gonder(f"toplanti-{zaman}-{i}", q["soru"], q.get("tur") or "eksik", metin,
+                              kaynak="toplanti", proje_id=p["id"])
+        for i, b in enumerate(a.get("bitti_mi") or []):
+            try:
+                p = projeler.onay_iste(b["proje_id"], b.get("neden"))
+            except ValueError:
+                continue
+            metin = (f"✅ \"{p.get('baslik')}\" bitti mi? CEO: {b.get('neden') or '-'}\n"
+                     "Onay için \"evet\" yaz; değilse eksik olanı yaz.")
+            self._soru_gonder(f"bitti-{zaman}-{i}", "bitti mi?", "diger", metin, kaynak="bitti_mi", proje_id=p["id"])
+
+    def ozet_durum(self):
+        d = durum()
+        return {"aktif": d["aktif"], "tutanaklar": list(reversed(d["tutanaklar"])), "saatler": d["saatler"]}
+
+    # ---------- yardımcılar ----------
+
+    def _soru_gonder(self, sid, soru, tur, metin, **ek):
+        sorular.soru_ekle("ceo", sid, None, soru, tur, **ek)
+        sorular.soru_guncelle(sid, durum="kullanicida", bildirim=metin)
+        self.bildir(metin, {"tip": "soru", "soru_id": sid, "ajan": "ceo", "session_id": None})
+
+    def _gorev_basligi(self, x):
+        p = projeler.al(x.get("proje_id")) or {}
+        return next((g.get("baslik") for g in p.get("gorevler") or [] if g.get("id") == x.get("gorev_id")), None)
+
+    def _atama_baslat(self, x):
+        """→ "basladi" | "kuyruk" | hata metni. Meşgul ajanın ataması bekleyenlere yazılır."""
+        try:
+            b = self.gorev_baslat(x["ajan"], prompt=x["prompt"], kaynak="toplanti")
+        except Exception as e:  # noqa: BLE001 — IstekHatasi dahil
+            if getattr(e, "kod", None) == 409:
+                degistir(lambda d: d["bekleyen_atamalar"].update({x["ajan"]: x}))
+                return "kuyruk"
+            return str(e)[:150] or type(e).__name__
+        if (b or {}).get("kosu_id"):
+            eslesme_ekle(b["kosu_id"], x.get("proje_id"), x.get("gorev_id"))
+        return "basladi"
+
+    def _bekleyenleri_baslat(self):
+        bekleyen = durum()["bekleyen_atamalar"]
+        if not bekleyen:
+            return
+        kuyruk = set(sorular.devam_kuyrugu())
+        for ajan, x in list(bekleyen.items()):
+            if ajan in kuyruk or self.mesgul_mu(ajan):
+                continue  # önce yarım kalmış işi sürdüren cevap çalışır
+            degistir(lambda d, a=ajan: d["bekleyen_atamalar"].pop(a, None))
+            sonuc = self._atama_baslat(x)
+            if sonuc not in ("basladi", "kuyruk"):
+                self.bildir(f"⚠ {ajan} için bekleyen toplantı işi başlatılamadı, düşürüldü: {sonuc}", None)
+
+    def _hatirlat(self, simdi):
+        d = durum()
+        bas = slot(simdi, d["saatler"]["sabah"])
+        bugun = simdi.date().isoformat()
+        if not (bas <= simdi < bas + timedelta(seconds=GEC_KALMA_SN)) or d.get("hatirlatma") == bugun:
+            return
+        bekleyen = projeler.onay_bekleyenler()
+        if not bekleyen:
+            return
+        degistir(lambda d: d.update(hatirlatma=bugun))
+        sorulari = {s.get("proje_id"): s for s in sorular.bekleyen_sorular() if s.get("kaynak") == "bitti_mi"}
+        for p in bekleyen:
+            s = sorulari.get(p["id"])
+            self.bildir(f"⏳ '{p.get('baslik')}' için onayın bekleniyor.",
+                        {"tip": "soru", "soru_id": s["soru_id"], "ajan": "ceo", "session_id": None} if s else None)

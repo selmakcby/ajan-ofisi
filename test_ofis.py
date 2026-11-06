@@ -1949,6 +1949,206 @@ def test_toplanti_eslesme(tmp):
     assert len(toplanti.durum()["eslesme"]) == 200
 
 
+# ---------- Toplantı akışı (T5) ----------
+
+class _SahteCeo:
+    def __init__(self, *cevaplar):
+        self.cevaplar, self.promptlar = list(cevaplar), []
+
+    def __call__(self, prompt, log_id):
+        self.promptlar.append(prompt)
+        c = self.cevaplar.pop(0)
+        if isinstance(c, Exception):
+            raise c
+        return c
+
+
+def _toplanti_kur(tmp, ceo, mesgul=lambda a: False):
+    import toplanti
+    _ajanlar(tmp)
+    basla, mesaj = [], []
+
+    def gorev(ajan, **k):
+        basla.append((ajan, k))
+        return {"kosu_id": f"k-{ajan}-{len(basla)}"}
+    t = toplanti.Toplanti(ceo, gorev, lambda m, h: mesaj.append((m, h)) or len(mesaj), mesgul_mu=mesgul,
+                          arka=lambda f, *a: f(*a))
+    return t, basla, mesaj
+
+
+def _bitisi_gecir():
+    import toplanti
+    d = toplanti.durum()
+    d["aktif"]["bitis"] = "2000-01-01T00:00:00+00:00"
+    toplanti.kaydet(d)
+
+
+def test_proje_yokken_model_yok(tmp):
+    from datetime import datetime
+    ceo = _SahteCeo()
+    t, basla, mesaj = _toplanti_kur(tmp, ceo)
+    t.tik(datetime(2026, 11, 6, 9, 1))
+    t.tik(datetime(2026, 11, 6, 17, 1))
+    assert ceo.promptlar == [] and basla == [] and mesaj == []
+
+
+def test_sabah_toplantisi_uctan_uca(tmp):
+    import projeler
+    import sorular
+    import toplanti
+    from datetime import datetime
+    p = projeler.ekle("Site")
+    ceo = _SahteCeo({"ozet": "Bugün taslak.", "katilimcilar": ["yazar"],
+                     "gorevler": [{"proje_id": p["id"], "baslik": "taslak", "ajan": "yazar", "durum": "yapiliyor"}],
+                     "ilerleme": [{"proje_id": p["id"], "yuzde": 10}],
+                     "atamalar": [{"ajan": "yazar", "prompt": "taslak yaz", "proje_id": p["id"]}],
+                     "sorular": [{"proje_id": p["id"], "soru": "Renk?", "tur": "diger"},
+                                 {"proje_id": p["id"], "soru": "Ücretli font?", "tur": "maliyet"}]})
+    t, basla, mesaj = _toplanti_kur(tmp, ceo)
+    t.tik(datetime(2026, 11, 6, 9, 1))
+    assert projeler.al(p["id"])["ilerleme"] == 10 and len(projeler.al(p["id"])["gorevler"]) == 1
+    aktif = toplanti.durum()["aktif"]
+    assert basla == [] and aktif["tur"] == "sabah" and aktif["konu"] == "Bugün ne yapacağız?"
+    assert aktif["katilimcilar"] == ["ceo", "yazar"]
+    with open(ortak.OLAYLAR, encoding="utf-8") as f:
+        olay = [json.loads(s) for s in f if "toplanti_basladi" in s][0]
+    assert olay["katilimcilar"] == ["ceo", "yazar"] and olay["projeler"] == [{"baslik": "Site", "ilerleme": 10}]
+    t.tik(datetime(2026, 11, 6, 9, 3))
+    assert basla == []                                                   # 5 dk dolmadı
+    _bitisi_gecir()
+    t.tik(datetime(2026, 11, 6, 9, 7))
+    assert basla[0][0] == "yazar" and basla[0][1]["kaynak"] == "toplanti"
+    assert toplanti.eslesme_bul("k-yazar-1")["proje_id"] == p["id"]
+    assert mesaj[0][0].startswith("🗓 Sabah toplantısı — Bugün ne yapacağız?") and len(mesaj) == 3
+    assert "▶ yazar: taslak yaz" in mesaj[0][0]
+    assert [s["soru"] for s in sorular.bekleyen_sorular()] == ["Renk?", "Ücretli font?"]
+    assert all(h["tip"] == "soru" and h["soru_id"] for _, h in mesaj[1:])
+    assert mesaj[1][0].startswith("❓ CEO soruyor (Site): Renk?")
+    t.tik(datetime(2026, 11, 6, 10, 0))
+    assert len(ceo.promptlar) == 1                                       # aynı gün tekrar yok
+    assert toplanti.durum()["aktif"] is None and len(toplanti.durum()["tutanaklar"]) == 1
+
+
+def test_yeniden_baslatma_aktif_tamamlanir(tmp):
+    import projeler
+    import toplanti
+    from datetime import datetime
+    p = projeler.ekle("Site")
+    d = toplanti.durum()
+    d["son"]["sabah"] = "2026-11-06"
+    d["aktif"] = {"tur": "sabah", "konu": "Bugün ne yapacağız?", "baslangic": "2026-11-06T09:00:00+03:00",
+                  "bitis": "2000-01-01T00:00:00+00:00", "katilimcilar": ["ceo", "yazar"], "ozet": "x", "sorular": [],
+                  "bitti_mi": [], "reddedilen": [],
+                  "atamalar": [{"ajan": "yazar", "prompt": "yaz", "proje_id": p["id"], "gorev_id": None}]}
+    toplanti.kaydet(d)
+    t, basla, _ = _toplanti_kur(tmp, _SahteCeo())                       # yeni süreç
+    t.tik(datetime(2026, 11, 6, 9, 30))
+    assert [b[0] for b in basla] == ["yazar"] and toplanti.durum()["aktif"] is None
+
+
+def test_aksam_bitti_mi_ve_kapali_proje(tmp):
+    import projeler
+    import sorular
+    from datetime import datetime
+    p, q = projeler.ekle("Site"), projeler.ekle("Blog")
+    ceo = _SahteCeo({"ozet": "Bitti gibi.", "katilimcilar": [], "ilerleme": [{"proje_id": p["id"], "yuzde": 100}],
+                     "bitti_mi": [{"proje_id": p["id"], "neden": "tüm görevler bitti"},
+                                  {"proje_id": q["id"], "neden": "x"}],
+                     "sorular": [{"proje_id": q["id"], "soru": "Blog?", "tur": "diger"}]})
+    t, _, mesaj = _toplanti_kur(tmp, ceo)
+    t.tik(datetime(2026, 11, 6, 17, 1))
+    projeler.kapat(q["id"])                                             # toplantı sürerken kullanıcı kapattı
+    _bitisi_gecir()
+    t.tik(datetime(2026, 11, 6, 17, 7))
+    assert projeler.al(p["id"])["durum"] == "onay_bekliyor"
+    assert mesaj[0][0].startswith("🌆 Akşam toplantısı — Bugün ne yaptık?") and "📊 Site: %100" in mesaj[0][0]
+    assert [s["kaynak"] for s in sorular.bekleyen_sorular()] == ["bitti_mi"]
+    assert sum("bitti mi?" in m for m, _ in mesaj) == 1
+    t.tik(datetime(2026, 11, 7, 9, 0))
+    hatir = [(m, h) for m, h in mesaj if m.startswith("⏳ 'Site' için onayın bekleniyor.")]
+    assert len(hatir) == 1 and hatir[0][1]["soru_id"] == sorular.bekleyen_sorular()[0]["soru_id"]
+    t.tik(datetime(2026, 11, 7, 9, 5))
+    assert len(ceo.promptlar) == 1 and len([m for m, _ in mesaj if m.startswith("⏳")]) == 1
+
+
+def test_bekleyen_atama_sira_ve_silinen_ajan(tmp):
+    import sorular
+    import toplanti
+    mesgul = {"yazar"}
+    t, basla, mesaj = _toplanti_kur(tmp, _SahteCeo(), mesgul=lambda a: a in mesgul)
+    d = toplanti.durum()
+    d["bekleyen_atamalar"] = {"yazar": {"ajan": "yazar", "prompt": "yaz", "proje_id": "p-x", "gorev_id": None},
+                              "silinmis": {"ajan": "silinmis", "prompt": "x", "proje_id": "p-x", "gorev_id": None}}
+    toplanti.kaydet(d)
+    sorular.devam_birak("yazar", {"kaynak": "telegram",
+                                  "devam": {"session_id": "s", "cevap": "c", "cevap_kaynak": "kullanici"}})
+
+    def gorev(ajan, **k):
+        if ajan == "silinmis":
+            e = RuntimeError("bilinmeyen ajan")
+            e.kod = 404
+            raise e
+        basla.append((ajan, k))
+        return {"kosu_id": "k1"}
+    t.gorev_baslat = gorev
+    t.tik()
+    assert basla == [] and "silinmis" not in toplanti.durum()["bekleyen_atamalar"]
+    assert any(m.startswith("⚠") and "silinmis" in m for m, _ in mesaj)
+    mesgul.clear()
+    t.tik()
+    assert basla == []                                                  # önce devam kuyruğundaki cevap
+    sorular.devam_al("yazar")
+    t.tik()
+    assert [b[0] for b in basla] == ["yazar"] and toplanti.durum()["bekleyen_atamalar"] == {}
+    assert toplanti.eslesme_bul("k1")["proje_id"] == "p-x"
+
+
+def test_mesgul_ajanin_atamasi_kuyruga(tmp):
+    import projeler
+    import toplanti
+    from datetime import datetime
+    p = projeler.ekle("Site")
+    ceo = _SahteCeo({"ozet": "x", "katilimcilar": [],
+                     "atamalar": [{"ajan": "yazar", "prompt": "yaz", "proje_id": p["id"]}]})
+    t, basla, mesaj = _toplanti_kur(tmp, ceo)
+
+    def mesgul_gorev(ajan, **k):
+        e = RuntimeError("ajan zaten çalışıyor")
+        e.kod = 409
+        raise e
+    t.gorev_baslat = mesgul_gorev
+    t.tik(datetime(2026, 11, 6, 9, 1))
+    _bitisi_gecir()
+    t.tik(datetime(2026, 11, 6, 9, 7))
+    assert toplanti.durum()["bekleyen_atamalar"]["yazar"]["prompt"] == "yaz" and "⏳ yazar" in mesaj[0][0]
+
+
+def test_bugunku_kosular_bozuk_satir(tmp):
+    import toplanti
+    toplanti.eslesme_ekle("k1", "p-1", "g-1")
+    satirlar = [
+        {"zaman": "2026-11-06T10:00:00+03:00", "tur": "kosu_bitti", "ajan": "yazar", "ozet": "ok", "kosu_id": "k1"},
+        "bozuk{",
+        {"zaman": "2026-11-05T10:00:00+03:00", "tur": "kosu_bitti", "ajan": "yazar", "kosu_id": "k0"},
+        {"zaman": "2026-11-06T11:00:00+03:00", "tur": "ilerledi", "ajan": "yazar", "kosu_id": "k1"},
+    ]
+    with open(ortak.OLAYLAR, "w", encoding="utf-8") as f:
+        for s in satirlar:
+            f.write((s if isinstance(s, str) else json.dumps(s)) + "\n")
+    k = toplanti.bugunku_kosular("2026-11-06")
+    assert [x["kosu_id"] for x in k] == ["k1"] and k[0]["proje_id"] == "p-1" and k[0]["gorev_id"] == "g-1"
+
+
+def test_toplanti_ceo_hatasi_bildirilir(tmp):
+    import projeler
+    from datetime import datetime
+    projeler.ekle("Site")
+    t, basla, mesaj = _toplanti_kur(tmp, _SahteCeo(ValueError("JSON yok")))
+    t.tik(datetime(2026, 11, 6, 9, 1))
+    t.tik(datetime(2026, 11, 6, 9, 2))
+    assert mesaj[0][0].startswith("⚠ Sabah toplantısı yapılamadı") and len(mesaj) == 1 and basla == []
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")  # Windows'ta yönlendirilmiş çıktı cp1254 olabilir
     sys.stderr.reconfigure(encoding="utf-8")
@@ -1956,10 +2156,12 @@ def main():
     if len(sys.argv) > 1:
         testler = [(ad, f) for ad, f in testler if any(s in ad for s in sys.argv[1:])]
     asil_durum, asil_ajanlar, asil_kok, asil_veri = ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI, ortak.KOK, ortak.VERI
+    asil_olaylar = ortak.OLAYLAR
     hatali = 0
     for ad, f in testler:
         tmp = tempfile.mkdtemp(prefix="ofis-test-")
         ortak.DURUM_DIZINI = os.path.join(tmp, "durum")
+        ortak.OLAYLAR = os.path.join(tmp, "olaylar.jsonl")
         ortak.KOK = ortak.VERI = tmp  # göreli çalışma klasörleri (calisma/<id>) gerçek repoya düşmesin
         os.makedirs(ortak.DURUM_DIZINI)
         try:
@@ -1971,6 +2173,7 @@ def main():
             traceback.print_exc()
         finally:
             ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI, ortak.KOK, ortak.VERI = asil_durum, asil_ajanlar, asil_kok, asil_veri
+            ortak.OLAYLAR = asil_olaylar
             shutil.rmtree(tmp, ignore_errors=True)
     print(f"{len(testler) - hatali}/{len(testler)}")
     if hatali:
