@@ -12,19 +12,25 @@ import threading
 import time
 
 import ortak
+import projeler
 import sorular
 
 OTOMATIK_SINIR = 3
+CEVAPLAYAN = {"ceo-zaman-asimi": "CEO, 1 saat dolunca", "kullanici-web": "web", "kullanici-telegram": "Telegram"}
 TELEGRAM_KAYNAKLARI = ("telegram", "telegram-ceo")
 ARALIK_SN = 1.0
 
 
 class Izleyici:
-    def __init__(self, gorev_baslat, triyaj, bildir=None, mesgul_mu=ortak.ajan_mesgul):
+    def __init__(self, gorev_baslat, triyaj, bildir=None, mesgul_mu=ortak.ajan_mesgul, ceo_calistir=None,
+                 zaman_asimi_cevabi=None, zamanlayici=None):
         self.gorev_baslat = gorev_baslat
         self.mesgul_mu = mesgul_mu
         self.triyaj = triyaj
         self.bildir = bildir or (lambda metin, hedef: None)  # Telegram bağlanınca atanır
+        self.ceo_calistir = ceo_calistir
+        self.zaman_asimi_cevabi = zaman_asimi_cevabi or (lambda ajan, soru, baglam: None)
+        self.zamanlayici = zamanlayici
 
     # ---------- çekirdek ----------
 
@@ -85,13 +91,80 @@ class Izleyici:
                             "session_id": olay.get("session_id")})
 
     def _baslat(self, ajan, istek):
+        """→ "basladi" | "kuyruk" | "hata"."""
         try:
             self.gorev_baslat(ajan, **istek)
+            return "basladi"
         except Exception as e:  # noqa: BLE001
             if getattr(e, "kod", None) == 409:
                 sorular.devam_birak(ajan, istek)  # ajan meşgul: koşusu bitince başlar
-            else:
-                self.bildir(f"⚠ {ajan} devam ettirilemedi: {e}", None)
+                return "kuyruk"
+            self.bildir(f"⚠ {ajan} devam ettirilemedi: {e}", None)
+            return "hata"
+
+    # ---------- soruların tek cevap yolu (Telegram, web, 1 saat kuralı) ----------
+
+    def soru_cevapla(self, soru_id, cevap, kaynak):
+        """kaynak: kullanici-telegram | kullanici-web | ceo-zaman-asimi. Kullanıcıya gösterilecek kısa metin döner."""
+        s = sorular.soru_al(soru_id)
+        if not s:
+            return "Böyle bir soru yok."
+        if not sorular.cevap_kilitle(soru_id, cevap, kaynak):
+            s = sorular.soru_al(soru_id)
+            kim = "CEO" if s.get("durum") == "ceo" else CEVAPLAYAN.get(s.get("cevaplayan"), "Telegram")
+            hedef = "ajana" if s.get("ajan") == "ceo" else s.get("ajan")
+            return (f"Bu soru zaten cevaplandı ({kim}): {s.get('cevap') or ''}. "
+                    f"Fikrin değiştiyse @{hedef} ile yeni iş ver.")
+        telegram = kaynak == "kullanici-telegram"
+        tur = s.get("kaynak")
+        if tur == "bitti_mi":
+            return self._bitti_mi_cevabi(s, cevap)
+        if tur == "toplanti":
+            return self._toplanti_cevabi(s, cevap, kaynak, telegram)
+        ajan, session_id = s["ajan"], s.get("session_id")
+        kullanici = kaynak.startswith("kullanici")
+        if session_id:
+            (sorular.otomatik_sifirla if kullanici else sorular.otomatik_artir)(session_id)
+        run_kaynak = "telegram" if telegram else "arayuz"
+        if not session_id:  # sürdürülecek oturum yok: aynı ajana yeni görev
+            sonuc = self._baslat(ajan, {"prompt": cevap, "kaynak": run_kaynak})
+        else:
+            sonuc = self._baslat(ajan, {"kaynak": run_kaynak, "devam": {
+                "session_id": session_id, "cevap": cevap, "cevap_kaynak": "kullanici" if kullanici else "ceo"}})
+        if sonuc == "kuyruk":
+            return f"⏳ {ajan} şu an meşgul; elindeki iş bitince cevabınla devam edecek."
+        if sonuc == "hata":
+            return f"⚠ {ajan} devam ettirilemedi."
+        return f"▶ {ajan} cevabınla devam ediyor."
+
+    def _bitti_mi_cevabi(self, s, cevap):
+        p = projeler.al(s.get("proje_id")) or {}
+        baslik = p.get("baslik") or "proje"
+        try:
+            if projeler.evet_mi(cevap):
+                projeler.onayla(s.get("proje_id"))
+                return f"✅ '{baslik}' kapandı."
+            projeler.reddet(s.get("proje_id"), cevap)
+            return f"↩ '{baslik}' açık kaldı; notun CEO'ya iletildi."
+        except ValueError as e:
+            return f"⚠ {e}"
+
+    def _toplanti_cevabi(self, s, cevap, kaynak, telegram):
+        proje_id = s.get("proje_id")
+        try:
+            projeler.not_ekle(proje_id, cevap, "kullanici" if kaynak.startswith("kullanici") else "ceo")
+        except ValueError:
+            pass  # proje kapanmış/silinmiş: cevap yine CEO'ya gider
+        if not self.ceo_calistir:
+            return "Cevabın projeye not olarak eklendi."
+        try:
+            r = self.ceo_calistir(cevap, kaynak="telegram" if telegram else "arayuz", onceki_cevap=s.get("soru"))
+        except Exception as e:  # noqa: BLE001 — IstekHatasi dahil
+            return f"Cevabın projeye not olarak eklendi; CEO şu an çalışamadı: {e}"
+        satirlar = [r.get("cevap") or ""]
+        satirlar += [f"▶ {b['ajan']} başladı" for b in r.get("baslatilan") or []]
+        satirlar += [f"✗ {x.get('ajan')}: {x.get('neden')}" for x in r.get("reddedilen") or []]
+        return "\n".join(x for x in satirlar if x)
 
     # ---------- iş parçacığı ----------
 

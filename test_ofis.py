@@ -317,9 +317,11 @@ def _bot(tmp, kullanici=42, mesgul=False, api=None):
         cagrilar.append(("ceo", metin, k))
         return {"cevap": "Herkes uyuyor.", "baslatilan": [], "reddedilen": []}
 
+    import akis
     api = api or SahteApi()
+    iz = akis.Izleyici(gorev_baslat, None, ceo_calistir=ceo_calistir, mesgul_mu=lambda a: False)
     bot = telegram.Bot({"token": "1:x", "kullanici": kullanici, "rapor_saati": (18, 0)}, api,
-                       gorev_baslat, ceo_calistir, env_yolu=os.path.join(tmp, ".env"))
+                       gorev_baslat, ceo_calistir, env_yolu=os.path.join(tmp, ".env"), soru_cevapla=iz.soru_cevapla)
     return bot, api, cagrilar
 
 
@@ -337,8 +339,7 @@ def test_yonlendir():
     assert telegram.yonlendir("@yazar taslak yaz", None, t) == {"tip": "ajan", "ajan": "yazar", "prompt": "taslak yaz"}
     assert telegram.yonlendir("@ceo durum?", None, t)["tip"] == "ceo"
     soru = {"tip": "soru", "soru_id": "k", "ajan": "yazar", "session_id": "s"}
-    assert telegram.yonlendir("onaylıyorum", soru, t) == {"tip": "devam", "ajan": "yazar", "session_id": "s",
-                                                          "cevap": "onaylıyorum", "soru_id": "k"}
+    assert telegram.yonlendir("onaylıyorum", soru, t) == {"tip": "soru", "soru_id": "k", "cevap": "onaylıyorum"}
     r = {"tip": "rapor", "maddeler": [{"ajan": "yazar", "session_id": "s", "kosu_id": "k"}]}
     assert telegram.yonlendir("1 geri al", r, t)["session_id"] == "s"
     assert telegram.yonlendir("1 geri al", r, t)["cevap"] == "geri al"
@@ -385,6 +386,7 @@ def test_bot_soruya_cevap(tmp):
     import sorular
     bot, api, c = _bot(tmp, mesgul=True)
     sorular.soru_ekle("yazar", "k1", "s1", "Uygun mu?", "diger")
+    sorular.soru_guncelle("k1", durum="kullanicida")
     sorular.otomatik_artir("s1")
     sorular.mesaj_esle(777, {"tip": "soru", "soru_id": "k1", "ajan": "yazar", "session_id": "s1"})
     bot.isle(_mesaj("onaylıyorum", yanit=777))
@@ -1707,6 +1709,67 @@ def test_proje_dosyasi_ajanlara_yasak():
     y = ortak.yasakli_araclar({})
     assert "Read(**/projeler.json)" in y and "Read(**/toplantilar.json)" in y
     assert ortak.veri_kacis("</x>") == "<\/x>"
+
+
+# ---------- Tek soru-cevap yolu (T2) ----------
+
+def test_soru_cevapla_tek_sefer(tmp):
+    import akis
+    import sorular
+    cagri = []
+    iz = akis.Izleyici(lambda ajan, **k: cagri.append((ajan, k)) or {"kosu_id": "k"}, None, mesgul_mu=lambda a: False)
+    sorular.soru_ekle("yazar", "k1", "s1", "Plan onaylı mı?", "diger")
+    sorular.soru_guncelle("k1", durum="kullanicida")
+    assert "devam" in iz.soru_cevapla("k1", "onaylıyorum", "kullanici-web")
+    assert cagri[0][0] == "yazar" and cagri[0][1]["devam"]["session_id"] == "s1"
+    assert cagri[0][1]["devam"]["cevap_kaynak"] == "kullanici"
+    m = iz.soru_cevapla("k1", "yine evet", "kullanici-telegram")
+    assert "zaten cevaplandı" in m and "web" in m and len(cagri) == 1
+    assert sorular.son_cevaplananlar()[0]["soru_id"] == "k1"
+    assert iz.soru_cevapla("yok", "x", "kullanici-web") == "Böyle bir soru yok."
+
+
+def test_soru_cevapla_bitti_mi(tmp):
+    import akis
+    import projeler
+    import sorular
+    iz = akis.Izleyici(None, None)
+    p = projeler.ekle("Site")
+    projeler.onay_iste(p["id"], "bitti")
+    sorular.soru_ekle("ceo", "b1", None, "bitti mi?", "diger", kaynak="bitti_mi", proje_id=p["id"])
+    sorular.soru_guncelle("b1", durum="kullanicida")
+    assert "kapandı" in iz.soru_cevapla("b1", "Evet!", "kullanici-telegram")
+    assert projeler.al(p["id"])["durum"] == "kapali"
+    q = projeler.ekle("Blog")
+    projeler.onay_iste(q["id"], "bitti")
+    sorular.soru_ekle("ceo", "b2", None, "bitti mi?", "diger", kaynak="bitti_mi", proje_id=q["id"])
+    sorular.soru_guncelle("b2", durum="kullanicida")
+    assert "açık kaldı" in iz.soru_cevapla("b2", "evet ama footer eksik", "kullanici-web")
+    assert projeler.al(q["id"])["durum"] == "acik"
+
+
+def test_soru_cevapla_toplanti_sorusu(tmp):
+    import akis
+    import projeler
+    import sorular
+    ceo = []
+    iz = akis.Izleyici(None, None, ceo_calistir=lambda m, **k: ceo.append((m, k)) or
+                       {"cevap": "Tamam, başlatıyorum.", "baslatilan": [{"ajan": "yazar", "kosu_id": "kx"}],
+                        "reddedilen": []})
+    p = projeler.ekle("Site")
+    sorular.soru_ekle("ceo", "t1", None, "Hangi renk?", "diger", kaynak="toplanti", proje_id=p["id"])
+    sorular.soru_guncelle("t1", durum="kullanicida")
+    m = iz.soru_cevapla("t1", "mavi", "kullanici-web")
+    assert "Tamam" in m and "yazar" in m
+    assert ceo[0][0] == "mavi" and ceo[0][1]["onceki_cevap"] == "Hangi renk?" and ceo[0][1]["kaynak"] == "arayuz"
+    son = projeler.al(p["id"])["notlar"][-1]
+    assert son["kaynak"] == "kullanici" and son["metin"] == "mavi"
+
+
+def test_yonlendir_soru_id_tek_yol():
+    import telegram_kopru as tk
+    y = tk.yonlendir("evet", {"tip": "soru", "soru_id": "k1", "ajan": "ceo", "session_id": None}, {})
+    assert y == {"tip": "soru", "soru_id": "k1", "cevap": "evet"}
 
 
 def main():

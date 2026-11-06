@@ -806,8 +806,8 @@ class Isleyici(SimpleHTTPRequestHandler):
         self.wfile.flush()
 
 
-TELEGRAM = telegram_kopru.Yonetici(gorev_baslat, ceo_calistir)
-IZLEYICI = akis.Izleyici(gorev_baslat, ceo_triyaj, TELEGRAM.bildir)
+TELEGRAM = telegram_kopru.Yonetici(gorev_baslat, ceo_calistir, soru_cevapla=lambda *a: IZLEYICI.soru_cevapla(*a))
+IZLEYICI = akis.Izleyici(gorev_baslat, ceo_triyaj, TELEGRAM.bildir, ceo_calistir=ceo_calistir)
 
 
 def bos_port_ile_ac():

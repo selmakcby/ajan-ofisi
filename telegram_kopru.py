@@ -60,11 +60,12 @@ def yonlendir(metin, yanit_hedefi, tablo):
     if e:
         return {"tip": "eslestir", "kod": e.group(1)}
     h = yanit_hedefi or {}
+    if h.get("soru_id"):  # her tür soru (ajan, toplantı, bitti mi) tek cevap yolundan
+        return {"tip": "soru", "soru_id": h["soru_id"], "cevap": metin}
     if h.get("tip") in ("soru", "kosu"):
         if not h.get("session_id"):  # sürdürülecek oturum yok: aynı ajana yeni görev
             return {"tip": "ajan", "ajan": h["ajan"], "prompt": metin}
-        y = {"tip": "devam", "ajan": h["ajan"], "session_id": h["session_id"], "cevap": metin}
-        return {**y, "soru_id": h["soru_id"]} if h.get("soru_id") else y
+        return {"tip": "devam", "ajan": h["ajan"], "session_id": h["session_id"], "cevap": metin}
     if h.get("tip") == "rapor":
         e = RAPOR_MADDE.match(metin)
         if e:
@@ -134,11 +135,12 @@ class Api:
 
 
 class Bot:
-    def __init__(self, ayar, api, gorev_baslat, ceo_calistir, env_yolu=None):
+    def __init__(self, ayar, api, gorev_baslat, ceo_calistir, env_yolu=None, soru_cevapla=None):
         self.ayar = dict(ayar)
         self.api = api
         self.gorev_baslat = gorev_baslat
         self.ceo_calistir = ceo_calistir
+        self.soru_cevapla = soru_cevapla or (lambda soru_id, cevap, kaynak: "Soru cevaplama kapalı.")
         self.env_yolu = env_yolu
         self.bot_id = str(ayar["token"]).split(":", 1)[0]
         self.kod = None
@@ -247,6 +249,8 @@ class Bot:
                               {"tip": "kosu", "ajan": y["ajan"], "session_id": None, "kosu_id": b.get("kosu_id")})
             elif y["tip"] == "devam":
                 self._devam(mesaj, y)
+            elif y["tip"] == "soru":
+                self._cevapla(mesaj, self.soru_cevapla(y["soru_id"], y["cevap"], "kullanici-telegram"))
             else:
                 self._ceo(mesaj, y)
         except Exception as e:  # noqa: BLE001 — IstekHatasi dahil: kullanıcıya kısa açıklama
@@ -254,8 +258,6 @@ class Bot:
 
     def _devam(self, mesaj, y):
         sorular.otomatik_sifirla(y["session_id"])  # kullanıcı cevap verdi: CEO döngü sayacı sıfırlanır
-        if y.get("soru_id"):
-            sorular.soru_guncelle(y["soru_id"], durum="cevaplandi", cevap=y["cevap"])
         istek = {"kaynak": "telegram",
                  "devam": {"session_id": y["session_id"], "cevap": y["cevap"], "cevap_kaynak": "kullanici"}}
         try:
@@ -340,9 +342,10 @@ class Bot:
 class Yonetici:
     """Botun yaşam döngüsü: .env'den başlatır, panelden değişince yeniden başlatır."""
 
-    def __init__(self, gorev_baslat, ceo_calistir, env_yolu=None, api_sinifi=Api):
+    def __init__(self, gorev_baslat, ceo_calistir, env_yolu=None, api_sinifi=Api, soru_cevapla=None):
         self.gorev_baslat = gorev_baslat
         self.ceo_calistir = ceo_calistir
+        self.soru_cevapla = soru_cevapla
         self.env_yolu = env_yolu
         self.api_sinifi = api_sinifi
         self.bot = None
@@ -356,7 +359,7 @@ class Yonetici:
                 sys.stderr.write("Telegram kapalı (token yok). Arayüzdeki Telegram panelinden bağlanabilirsin.\n")
                 return
             self.bot = Bot(ayar, self.api_sinifi(ayar["token"]), self.gorev_baslat, self.ceo_calistir,
-                           self.env_yolu)
+                           self.env_yolu, soru_cevapla=self.soru_cevapla)
             self._dur = threading.Event()
             threading.Thread(target=self.bot.dongu, args=(self._dur,), name="telegram", daemon=True).start()
 

@@ -41,11 +41,12 @@ def _sorular():
     return {"sorular": v.get("sorular") or {}, "otomatik": v.get("otomatik") or {}}
 
 
-def soru_ekle(ajan, kosu_id, session_id, soru, tur):
+def soru_ekle(ajan, kosu_id, session_id, soru, tur, **ek):
+    """ek: kaynak ("toplanti" | "bitti_mi"; yoksa ajan sorusu), proje_id."""
     with KILIT:
         v = _sorular()
         v["sorular"][kosu_id] = {"ajan": ajan, "kosu_id": kosu_id, "session_id": session_id, "soru": soru,
-                                 "tur": tur, "durum": "yeni", "zaman": ortak.simdi_iso()}
+                                 "tur": tur, "durum": "yeni", "zaman": ortak.simdi_iso(), **ek}
         _yaz("sorular.json", v)
     return kosu_id
 
@@ -61,6 +62,23 @@ def soru_guncelle(soru_id, **alanlar):
         if soru_id in v["sorular"]:
             v["sorular"][soru_id].update(alanlar)
             _yaz("sorular.json", v)
+
+
+def cevap_kilitle(soru_id, cevap, kaynak):
+    """Soru hâlâ kullanıcıdaysa cevaplandı olarak işaretler ve döndürür; değilse None (çift cevap olmaz)."""
+    with KILIT:
+        v = _sorular()
+        s = v["sorular"].get(soru_id)
+        if not s or s.get("durum") != "kullanicida":
+            return None
+        s.update(durum="cevaplandi", cevap=cevap, cevaplayan=kaynak, cevap_zaman=ortak.simdi_iso())
+        _yaz("sorular.json", v)
+        return {**s, "soru_id": soru_id}
+
+
+def son_cevaplananlar(n=20):
+    c = [{**s, "soru_id": i} for i, s in _sorular()["sorular"].items() if s.get("durum") in ("cevaplandi", "ceo")]
+    return sorted(c, key=lambda s: s.get("cevap_zaman") or s.get("zaman") or "", reverse=True)[:n]
 
 
 def bekleyen_sorular():
