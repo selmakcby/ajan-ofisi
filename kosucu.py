@@ -22,7 +22,9 @@ import token_sayac  # noqa: E402
 YALIN_DIZIN = os.path.join(ortak.KOK, "durum", "yalin-cwd")
 BEKLEME_SN = int(os.environ.get("OFIS_PENCERE_BEKLE", "90"))
 HAFIZA_DESENI = re.compile(r"<hafiza_ekle>(.*?)</hafiza_ekle>", re.S)
-SORU_DESENI = re.compile(r"<soru(?:\s+tur=\"([^\"]*)\")?\s*>(.*?)</soru>", re.S)
+# Esnek: tek/çift/tırnaksız tur, büyük harf, kapanmamış blok (çıktı kesildiyse) da soru sayılır.
+SORU_DESENI = re.compile(r"<soru\b([^>]*)>(.*?)(?:</soru\s*>|\Z)", re.S | re.I)
+TUR_DESENI = re.compile(r"tur\s*=\s*[\"']?([\w-]+)", re.I)
 SORU_TURLERI = ("maliyet", "buyuk-degisiklik", "yayin-mail-para", "diger")
 
 GOREV_SABLONU = """Sen Ajan Ofisi'nde "{ad}" ajanısın (oda: {oda}). Bugün {bugun}.
@@ -66,7 +68,8 @@ def soru_ayikla(metin):
     bloklar = SORU_DESENI.findall(metin or "")
     if not bloklar:
         return None
-    tur = bloklar[0][0] if len(bloklar) == 1 and bloklar[0][0] in SORU_TURLERI else "eksik"
+    e = TUR_DESENI.search(bloklar[0][0]) if len(bloklar) == 1 else None
+    tur = e.group(1).lower() if e and e.group(1).lower() in SORU_TURLERI else "eksik"
     soru = "\n".join(s.strip() for _, s in bloklar if s.strip())
     return {"soru": soru, "tur": tur if soru else "eksik"}
 
@@ -190,6 +193,7 @@ def kos(arg_dosyasi):
             os.makedirs(calisma_dizini, exist_ok=True)
             surec = subprocess.Popen(komut, cwd=calisma_dizini, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     env=ortak.alt_surec_ortami(),  # Telegram token'ı ajana sızmasın
                                      encoding="utf-8", errors="replace")  # Windows yerel kodlaması cp1254 olabilir
             surec.stdin.write(tam_prompt)
             surec.stdin.close()

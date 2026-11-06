@@ -20,8 +20,9 @@ ARALIK_SN = 1.0
 
 
 class Izleyici:
-    def __init__(self, gorev_baslat, triyaj, bildir=None):
+    def __init__(self, gorev_baslat, triyaj, bildir=None, mesgul_mu=ortak.ajan_mesgul):
         self.gorev_baslat = gorev_baslat
+        self.mesgul_mu = mesgul_mu
         self.triyaj = triyaj
         self.bildir = bildir or (lambda metin, hedef: None)  # Telegram bağlanınca atanır
 
@@ -45,6 +46,15 @@ class Izleyici:
             self._soru_isle(olay)
         elif olay.get("kaynak") in TELEGRAM_KAYNAKLARI:
             self.bildir(f"✓ {ajan} bitti: {olay.get('ozet') or ''}\n\n{olay.get('cikti') or ''}".strip(), hedef)
+
+    def kuyruk_isle(self):
+        """Meşgul olduğu için bekletilen cevapları, ajan boşalınca başlatır (koşu kosu_bitti yazmadan
+        kapanmış olsa ya da 409 ile kuyruğa giriş arasında bitmiş olsa da cevap kaybolmaz)."""
+        for ajan in sorular.devam_kuyrugu():
+            if not self.mesgul_mu(ajan):
+                istek = sorular.devam_al(ajan)
+                if istek:
+                    self._baslat(ajan, istek)
 
     def _soru_isle(self, olay):
         ajan, session_id = olay["ajan"], olay.get("session_id")
@@ -133,6 +143,7 @@ class Izleyici:
         while True:
             try:
                 ofset = self.tur(ofset)
+                self.kuyruk_isle()
             except OSError as e:
                 sys.stderr.write(f"izleyici: {type(e).__name__}: {e}\n")
                 time.sleep(10)

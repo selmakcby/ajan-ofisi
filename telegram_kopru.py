@@ -19,11 +19,11 @@ from datetime import datetime
 import ortak
 import sorular
 
-TELEGRAM_SINIR = 4000          # Telegram 4096 karakter (UTF-16) sayar; emoji payı bırakılır
+TELEGRAM_SINIR = 4096          # Telegram UTF-16 birimi sayar (emoji = 2); kisalt da öyle sayar
 POLL_SN = 50
 KOD_SURE_SN = 600
 MAKS_BEKLEME = 300
-AJAN_DESENI = re.compile(r"^@([a-z0-9-]{1,40})\s+(.+)$", re.S)
+AJAN_DESENI = re.compile(r"^@(\S+?):?(?:\s+(.*))?$", re.S)  # @Ad, @ad: ve boş gövde de yakalanır
 RAPOR_MADDE = re.compile(r"^\s*(\d+)\s+(.+)$", re.S)
 ESLESTIR = re.compile(r"^/baslat\s+(\d{6})$")
 TOKEN_DESENI = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
@@ -36,11 +36,21 @@ class TelegramHatasi(Exception):
         self.kod = kod
 
 
+def _u16(metin):
+    return len(metin.encode("utf-16-le")) // 2
+
+
 def kisalt(metin, sinir=TELEGRAM_SINIR, ek=""):
-    if len(metin) <= sinir:
+    """Telegram sınırına (UTF-16 birimi) sığdırır; sığmazsa kesip … (ve varsa ek) ekler."""
+    if _u16(metin) <= sinir:
         return metin
     kuyruk = "…\n" + ek if ek else "…"
-    return metin[:sinir - len(kuyruk)] + kuyruk
+    butce, n = sinir - _u16(kuyruk), 0
+    for i, ch in enumerate(metin):
+        n += 2 if ord(ch) > 0xFFFF else 1
+        if n > butce:
+            return metin[:i] + kuyruk
+    return metin
 
 
 def yonlendir(metin, yanit_hedefi, tablo):
@@ -67,7 +77,9 @@ def yonlendir(metin, yanit_hedefi, tablo):
         return {"tip": "ceo", "metin": metin, "onceki_cevap": h.get("cevap")}
     e = AJAN_DESENI.match(metin)
     if e:
-        ajan, prompt = e.group(1), e.group(2).strip()
+        ajan, prompt = e.group(1).lower(), (e.group(2) or "").strip()
+        if not prompt:
+            return {"tip": "hata", "mesaj": f"@{ajan} yazdıktan sonra ne yapacağını da yaz."}
         if ajan == "ceo":
             return {"tip": "ceo", "metin": prompt, "onceki_cevap": None}
         if not (tablo.get(ajan) or {}).get("kurulu"):
@@ -214,6 +226,8 @@ class Bot:
         metin = (mesaj.get("text") or "").strip()
         if not metin or not mesaj.get("from") or not mesaj.get("chat"):
             return
+        if mesaj["chat"].get("id") != mesaj["from"].get("id"):
+            return  # yalnız özel sohbet: grupta ajan çıktıları başkalarına gitmesin
         yanit = mesaj.get("reply_to_message")
         hedef = sorular.mesaj_hedefi(yanit["message_id"]) if yanit else None
         _, tablo = ortak.ajanlari_yukle()
@@ -273,10 +287,13 @@ class Bot:
             self._loglanan = type(e).__name__ + self.son_hata
             sys.stderr.write(f"telegram: {type(e).__name__}: {self.son_hata}\n")
 
-    def tur(self):
-        """Bir long polling turu + gün sonu raporu kontrolü. İstisna fırlatmaz."""
+    def tur(self, dur=None):
+        """Bir long polling turu + gün sonu raporu kontrolü. İstisna fırlatmaz.
+        dur set edildiyse (bağlantı kaldırıldı/değişti) gelen mesajlar işlenmez, rapor gönderilmez."""
         try:
             for g in self.api.guncellemeler(self.ofset + 1 if self.ofset else 0):
+                if dur is not None and dur.is_set():
+                    return
                 self.ofset = g["update_id"]
                 self._ofset_yaz()  # önce ofset: çökse bile aynı mesaj iki kez koşu başlatmaz
                 try:
@@ -284,9 +301,12 @@ class Bot:
                 except Exception as e:  # noqa: BLE001
                     sys.stderr.write(f"telegram: mesaj işlenemedi ({type(e).__name__}: {e})\n")
             self.bekleme, self.son_hata, self.son_hata_kod, self._loglanan = 0, None, None, None
+            self.bekleyenleri_gonder()  # ağ kesintisinde gönderilemeyen sorular (yalnız gönderilmemişler)
         except Exception as e:  # noqa: BLE001 — ağ yok, token geçersiz…: geri çekil
             self._hata_kaydet(e)
             self.bekleme = min(max(5, self.bekleme * 2), MAKS_BEKLEME)
+        if dur is not None and dur.is_set():
+            return
         try:
             self._rapor()
         except Exception as e:  # noqa: BLE001
@@ -312,7 +332,7 @@ class Bot:
         except Exception:  # noqa: BLE001
             pass
         while not dur.is_set():
-            self.tur()
+            self.tur(dur)
             if self.bekleme:
                 dur.wait(self.bekleme)
 

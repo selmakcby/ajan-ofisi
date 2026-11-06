@@ -181,6 +181,12 @@ def ajan_mesgul(ajan_id):
 ENV_DOSYASI = os.path.join(KOK, ".env")
 ENV_SATIRI = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
 SAAT_DESENI = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+ENV_IZIN = 0o600  # .env yalnız sahibi okuyabilsin (paylaşılan Linux/macOS makineleri)
+
+
+def alt_surec_ortami():
+    """Ajan/claude süreçlerine verilecek ortam: Telegram ayarları (token) çıkarılır."""
+    return {k: v for k, v in os.environ.items() if not k.startswith("OFIS_TELEGRAM_")}
 
 
 def env_oku(yol=None):
@@ -224,6 +230,7 @@ def env_yaz(guncel, yol=None):
     gecici = yol + ".tmp"
     with open(gecici, "w", encoding="utf-8") as f:
         f.write("\n".join(yeni) + "\n")
+    os.chmod(gecici, ENV_IZIN)
     os.replace(gecici, yol)
 
 

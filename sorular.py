@@ -20,11 +20,13 @@ def _yol(ad):
 
 
 def _oku(ad, varsayilan):
-    try:
-        with open(_yol(ad), encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return varsayilan
+    # Kilit altında: Windows'ta başka iş parçacığı dosyayı açıkken os.replace PermissionError verir.
+    with KILIT:
+        try:
+            with open(_yol(ad), encoding="utf-8") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return varsayilan
 
 
 def _yaz(ad, veri):
@@ -171,6 +173,11 @@ def devam_birak(ajan, istek):
         v = _oku("devam-kuyrugu.json", {})
         v[ajan] = istek
         _yaz("devam-kuyrugu.json", v)
+
+
+def devam_kuyrugu():
+    """Bekleyen devamı olan ajanlar."""
+    return list(_oku("devam-kuyrugu.json", {}))
 
 
 def devam_al(ajan):
