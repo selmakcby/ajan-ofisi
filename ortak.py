@@ -41,14 +41,49 @@ class YapilandirmaHatasi(Exception):
     pass
 
 
+VARSAYILAN_YASAK = ["Read(**/.env)", "Read(**/.env.*)", "Read(~/.env)", "Bash(rm:*)", "Bash(git push:*)",
+                    "Bash(curl:*)", "Bash(open:*)"]
+
+
+def en_kucuk_yapilandirma():
+    """İlk açılışta (ajanlar.json yokken) yazılan yapılandırma: yalnız CEO. Gerisi kurulum sihirbazından gelir."""
+    return {
+        "surum": 2,
+        "ayarlar": {"kullanici": "", "marka": "Ajan Ofisi"},
+        "odalar": [],
+        "varsayilan_yasak_araclar": list(VARSAYILAN_YASAK),
+        "ajanlar": [{
+            "id": "ceo", "ad": "CEO", "oda": "ceo", "cwd": ".", "model": "sonnet", "ne_zaman": "istek",
+            "ne_zaman_metin": "Sen konuşunca",
+            "aciklama": "Yalnız onunla konuşursun; işi ajanlara dağıtır. Araçsız, yalnız plan çıkarır.",
+            "izinli_araclar": [], "hazir_gorevler": [],
+        }],
+    }
+
+
+def yasakli_araclar(veri):
+    """Varsayılan yasaklar her zaman; dosyadakiler onlara eklenir (sıra korunur, tekrar yok)."""
+    return list(dict.fromkeys([*VARSAYILAN_YASAK, *(veri.get("varsayilan_yasak_araclar") or [])]))
+
+
+def cwd_coz(cwd):
+    """Göreli çalışma klasörü ofis klasörüne (KOK) göre çözülür; boş kalır (kurulmamış)."""
+    if not cwd:
+        return ""
+    yol = os.path.expanduser(cwd)
+    return os.path.normpath(yol if os.path.isabs(yol) else os.path.join(KOK, yol))
+
+
 def ajanlari_yukle():
     try:
         with open(AJANLAR_DOSYASI, encoding="utf-8") as f:
             veri = json.load(f)
-    except FileNotFoundError as e:
-        raise YapilandirmaHatasi(
-            f"{os.path.basename(AJANLAR_DOSYASI)} yok. Önce: cp ajanlar.example.json ajanlar.json"
-        ) from e
+    except FileNotFoundError:
+        veri = en_kucuk_yapilandirma()
+        gecici = AJANLAR_DOSYASI + ".tmp"
+        with open(gecici, "w", encoding="utf-8") as f:
+            json.dump(veri, f, ensure_ascii=False, indent=2)
+        os.replace(gecici, AJANLAR_DOSYASI)
     if not isinstance(veri, dict) or not isinstance(veri.get("ajanlar"), list):
         raise YapilandirmaHatasi("ajanlar.json içinde 'ajanlar' listesi olmalı")
     tablo = {}
@@ -58,12 +93,12 @@ def ajanlari_yukle():
         oda = ajan.get("oda") or "genel"
         if not isinstance(oda, str) or not ODA_ID_DESENI.fullmatch(oda):
             raise ValueError(f"geçersiz oda id: {oda!r} (ajan {ajan['id']})")
-        kurulu = os.path.isdir(os.path.expanduser(ajan.get("cwd") or ""))
+        cwd = cwd_coz(ajan.get("cwd"))
         tablo[ajan["id"]] = {
             **ajan,
             "oda": oda,
-            "cwd": os.path.expanduser(ajan.get("cwd") or ""),
-            "kurulu": kurulu,
+            "cwd": cwd,
+            "kurulu": bool(cwd) and os.path.isdir(cwd),
         }
     return veri, tablo
 

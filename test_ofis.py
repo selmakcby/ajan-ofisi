@@ -5,6 +5,7 @@
 o klasörün altındaki durum/'a çevrilir (gerçek çalışma verisine dokunulmaz).
 """
 import inspect
+import json
 import os
 import shutil
 import sys
@@ -296,7 +297,8 @@ def _ajanlar(tmp):
     os.makedirs(os.path.join(tmp, "yazar"), exist_ok=True)
     ortak_alan = {"aciklama": "", "ne_zaman_metin": ""}
     _json.dump({"ajanlar": [{"id": "yazar", "ad": "Yazar", "cwd": os.path.join(tmp, "yazar"), **ortak_alan},
-                            {"id": "ceo", "ad": "CEO", "cwd": tmp, **ortak_alan}]}, open(yol, "w", encoding="utf-8"))
+                            {"id": "ceo", "ad": "CEO", "cwd": tmp, **ortak_alan}], "odalar": []},
+               open(yol, "w", encoding="utf-8"))
     ortak.AJANLAR_DOSYASI = yol
 
 
@@ -749,6 +751,93 @@ def test_kaba_kuvvet_beklemesi():
     assert hesap.giris_bekleme() == 0
 
 
+# ---------- Kurulum T2: ajan_yonetimi.py ----------
+
+def test_id_turet():
+    import ajan_yonetimi as ay
+    assert ay.id_turet("Şeyma'nın Asistanı", set()) == "seymanin-asistani"
+    assert ay.id_turet("!!!", set()) == "ajan"
+    assert ay.id_turet("Blog Yazarı", {"blog-yazari"}) == "blog-yazari-2"
+    assert ay.id_turet("Blog Yazarı", {"blog-yazari", "blog-yazari-2"}) == "blog-yazari-3"
+    assert ay.id_turet("x" * 80, set()) == "x" * 40
+    assert ay.id_turet("İÇ Ğ Ü", set()) == "ic-g-u"
+
+
+def test_ajanlar_json_yoksa_en_kucuk(tmp):
+    ortak.AJANLAR_DOSYASI = os.path.join(tmp, "ajanlar.json")
+    veri, tablo = ortak.ajanlari_yukle()
+    assert list(tablo) == ["ceo"] and tablo["ceo"]["kurulu"] and os.path.exists(ortak.AJANLAR_DOSYASI)
+    assert tablo["ceo"]["cwd"] == ortak.KOK
+
+
+def test_ajan_ekle_guncelle_sil(tmp):
+    import ajan_yonetimi as ay
+    _ajanlar(tmp)
+    a = ay.ajan_ekle({"ad": "Blog Yazarı", "yeni_oda": {"ad": "Yazı Masası", "tema": "yazi"}, "aciklama": "Taslak yazar."})
+    assert a["id"] == "blog-yazari" and a["izinli_araclar"] == ["Read", "Glob", "Grep"]
+    assert a["ne_zaman"] == "istek" and a["ne_zaman_metin"] == "İstek gelince"
+    _, tablo = ortak.ajanlari_yukle()
+    assert tablo["blog-yazari"]["kurulu"]  # calisma/blog-yazari oluşturuldu
+    assert {"id": a["oda"], "ad": "Yazı Masası", "tema": "yazi", "aciklama": ""} in ay.oku()["odalar"]
+    ay.ajan_guncelle("blog-yazari", {"ad": "Baş Yazar", "yetkiler": ["okuma", "yazma"], "model": "haiku"})
+    b = ay.ajan_ayrinti("blog-yazari")
+    assert b["ad"] == "Baş Yazar" and b["model"] == "haiku" and b["yetkiler"] == ["okuma", "yazma"]
+    assert b["id"] == "blog-yazari" and b["aciklama"] == "Taslak yazar."  # formda olmayan alan korunur
+    ay.ajan_sil("blog-yazari")
+    assert "blog-yazari" not in ortak.ajanlari_yukle()[1]
+    for kotu in (lambda: ay.ajan_sil("ceo"), lambda: ay.ajan_ekle({"ad": ""}),
+                 lambda: ay.ajan_ekle({"ad": "X", "oda": "olmayan-oda"}),
+                 lambda: ay.ajan_ekle({"ad": "X", "model": "gpt"}),
+                 lambda: ay.ajan_ekle({"ad": "X", "yetkiler": ["root"]}),
+                 lambda: ay.ajan_ekle({"ad": "X", "yeni_oda": {"ad": "Y", "tema": "uydurma"}}),
+                 lambda: ay.ajan_ekle({"ad": "X", "hazir_gorevler": [{"etiket": "a", "prompt": "x" * 4001}]}),
+                 lambda: ay.ajan_guncelle("olmayan", {"ad": "X"})):
+        try:
+            kotu()
+            raise AssertionError("kabul edildi")
+        except ValueError:
+            pass
+
+
+def test_oda_ekle_guncelle(tmp):
+    import ajan_yonetimi as ay
+    _ajanlar(tmp)
+    o = ay.oda_ekle("Muhasebe", tema="veri")
+    assert o == {"id": "muhasebe", "ad": "Muhasebe", "tema": "veri", "aciklama": ""}
+    assert ay.oda_ekle("Muhasebe")["id"] == "muhasebe-2"
+    ay.oda_guncelle("muhasebe", {"ad": "Finans", "aciklama": "Fatura işleri"})
+    assert next(x for x in ay.oku()["odalar"] if x["id"] == "muhasebe")["ad"] == "Finans"
+
+
+def test_gecersiz_kayit_dosyayi_degistirmez(tmp):
+    import ajan_yonetimi as ay
+    _ajanlar(tmp)
+    once = open(ortak.AJANLAR_DOSYASI, encoding="utf-8").read()
+    veri = ay.oku()
+    veri["ajanlar"].append({"id": "Kötü Id", "ad": "x"})
+    try:
+        ay.kaydet(veri)
+        raise AssertionError("bozuk kayıt yazıldı")
+    except ValueError:
+        pass
+    assert open(ortak.AJANLAR_DOSYASI, encoding="utf-8").read() == once
+
+
+def test_kaydet_yedek_tutar(tmp):
+    import ajan_yonetimi as ay
+    _ajanlar(tmp)
+    once = open(ortak.AJANLAR_DOSYASI, encoding="utf-8").read()
+    ay.ajan_ekle({"ad": "Yeni"})
+    assert open(ortak.AJANLAR_DOSYASI + ".bak", encoding="utf-8").read() == once
+
+
+def test_yasakli_araclar_her_zaman():
+    assert ortak.yasakli_araclar({"varsayilan_yasak_araclar": ["Bash(sudo:*)"]})[:7] == ortak.VARSAYILAN_YASAK
+    assert "Bash(sudo:*)" in ortak.yasakli_araclar({"varsayilan_yasak_araclar": ["Bash(sudo:*)"]})
+    assert ortak.yasakli_araclar({}) == ortak.VARSAYILAN_YASAK
+    assert len(ortak.yasakli_araclar({"varsayilan_yasak_araclar": ortak.VARSAYILAN_YASAK})) == 7
+
+
 # ---------- koşucu ----------
 
 def main():
@@ -757,11 +846,12 @@ def main():
     testler = [(ad, f) for ad, f in globals().items() if ad.startswith("test_") and callable(f)]
     if len(sys.argv) > 1:
         testler = [(ad, f) for ad, f in testler if any(s in ad for s in sys.argv[1:])]
-    asil_durum, asil_ajanlar = ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI
+    asil_durum, asil_ajanlar, asil_kok = ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI, ortak.KOK
     hatali = 0
     for ad, f in testler:
         tmp = tempfile.mkdtemp(prefix="ofis-test-")
         ortak.DURUM_DIZINI = os.path.join(tmp, "durum")
+        ortak.KOK = tmp  # göreli çalışma klasörleri (calisma/<id>) gerçek repoya düşmesin
         os.makedirs(ortak.DURUM_DIZINI)
         try:
             f(tmp) if inspect.signature(f).parameters else f()
@@ -771,7 +861,7 @@ def main():
             print(f"  ✗ {ad}")
             traceback.print_exc()
         finally:
-            ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI = asil_durum, asil_ajanlar
+            ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI, ortak.KOK = asil_durum, asil_ajanlar, asil_kok
             shutil.rmtree(tmp, ignore_errors=True)
     print(f"{len(testler) - hatali}/{len(testler)}")
     if hatali:

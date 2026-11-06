@@ -175,7 +175,7 @@ def kos(arg_dosyasi):
     else:
         tam_prompt = GOREV_SABLONU.format(ad=ajan["ad"], oda=ajan["oda"], bugun=ortak.bugun(),
                                           hafiza=hafiza_oku(ajan["id"]), gorev=gorev)
-    komut = komut_kur(ajan, veri.get("varsayilan_yasak_araclar", []), cikti_dizini, devam.get("session_id"))
+    komut = komut_kur(ajan, ortak.yasakli_araclar(veri), cikti_dizini, devam.get("session_id"))
 
     baslangic = time.time()
     ortak.durum_yaz(ajan["id"], {"durum": "calisiyor", "kosu_id": kosu_id, "pid": os.getpid(),
