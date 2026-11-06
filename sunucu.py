@@ -272,6 +272,8 @@ def claude_json(prompt, model, sema, log_id, zaman_asimi=CEO_ZAMAN_ASIMI):
     with open(os.path.join(ortak.KOSU_DIZINI, f"{log_id}.log"), "w", encoding="utf-8") as f:
         f.write(surec.stdout + ("\n--- stderr ---\n" + surec.stderr if surec.stderr else ""))
     ham = json.loads(surec.stdout)
+    if ham.get("is_error") and ortak.baglanti_hatasi_mi(str(ham.get("result"))):
+        raise ValueError(ortak.BAGLANTI_HATASI)
     return {"veri": json_ayikla(ham), "ham": ham}
 
 
@@ -291,7 +293,8 @@ def ceo_calistir(metin, kuru=False, kaynak="arayuz", onceki_cevap=None):
         ortak.olay_yaz({"tur": "ceo_bitti", "kosu_id": ceo_id, "ajan": "ceo", "oda": "ceo",
                         "durum": "hata", "hata": f"{type(e).__name__}: {str(e)[:200]}",
                         "sure_sn": round(time.time() - baslangic, 1)})
-        raise IstekHatasi(502, "CEO geçerli bir plan döndürmedi; koşu başlatılmadı") from e
+        raise IstekHatasi(502, str(e) if str(e) == ortak.BAGLANTI_HATASI
+                          else "CEO geçerli bir plan döndürmedi; koşu başlatılmadı") from e
 
     baslatilan = []
     for a in ([] if kuru else gecerli):

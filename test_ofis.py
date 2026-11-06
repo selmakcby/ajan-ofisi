@@ -1536,6 +1536,14 @@ def test_yerelde_kisit_yok():
     assert k[0] != "sudo" and "Bash" in k
 
 
+def test_claude_baglanti_hatasi_anlasilir():
+    assert ortak.baglanti_hatasi_mi("Not logged in · Please run /login")
+    assert ortak.baglanti_hatasi_mi("Invalid API key · Fix external API key")
+    assert ortak.baglanti_hatasi_mi("OAuth token has expired")
+    assert not ortak.baglanti_hatasi_mi("Kod incelendi, 3 risk var.")
+    assert "Claude panelinden" in ortak.BAGLANTI_HATASI
+
+
 # ---------- koşucu ----------
 
 def main():

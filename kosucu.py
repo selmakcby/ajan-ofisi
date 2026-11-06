@@ -253,6 +253,8 @@ def bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini, kaynak=N
     eklenen = hafizaya_ekle(ajan["id"], metin) if basarili else []
     soru = soru_ayikla(metin) if basarili else None
     temiz = soru_temizle(HAFIZA_DESENI.sub("", metin))
+    if not basarili and ortak.baglanti_hatasi_mi(metin):
+        hata, temiz = ortak.BAGLANTI_HATASI, ortak.BAGLANTI_HATASI
     session_id = (sonuc or {}).get("session_id")
     cikti_yolu = os.path.join(cikti_dizini, f"{baglam['kosu_id']}.md")
     with open(cikti_yolu, "w", encoding="utf-8") as f:

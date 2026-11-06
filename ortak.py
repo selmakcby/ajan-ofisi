@@ -120,6 +120,15 @@ def ajan_klasoru_ac(yol):
         os.chmod(yol, 0o2770)
 
 
+BAGLANTI_HATASI = "Claude bağlantısı kurulmadı ya da geçersiz: üstteki Claude panelinden bağla."
+_BAGLANTI_IZI = re.compile(r"not logged in|/login|invalid api key|api key|oauth token|authentication", re.I)
+
+
+def baglanti_hatasi_mi(metin):
+    """claude'un "giriş yok / anahtar geçersiz" cevabı mı? (kullanıcıya anlaşılır mesaj gösterilir)"""
+    return bool(_BAGLANTI_IZI.search(metin or ""))
+
+
 _ARA = object()
 
 

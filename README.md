@@ -47,6 +47,37 @@ kapatır, `?hafif=1` düşük çözünürlük ve küçük gölgeyle çizer. (Ön
 
 Bir kediye tıkla → panelden hazır görev ver, ya da alttaki kutudan CEO'ya derdini anlat.
 
+### Sunucuda çalıştırma (Docker Compose)
+Ofisi bilgisayarından bağımsız, sürekli açık bir sunucuda çalıştırmak için (Telegram köprüsü de kesintisiz çalışır):
+
+```bash
+git clone https://github.com/rmkola/ajan-ofisi.git && cd ajan-ofisi
+echo "OFIS_ALAN_ADI=ofis.alanadiniz.com" > .env     # vekilinin kullandığı adres (HTTPS)
+docker compose up -d --build
+docker compose logs ofis                             # ilk açılışta KURULUM KODU burada
+```
+
+- **Erişim sende:** uygulama yalnız `127.0.0.1:8796`'ya açılır; önüne kendi ters vekilini koy ve HTTPS'i orada
+  sonlandır. Örnek (Caddy): `ofis.alanadiniz.com { reverse_proxy 127.0.0.1:8796 }` · nginx:
+  `proxy_pass http://127.0.0.1:8796; proxy_set_header Host $host; proxy_buffering off;` (canlı olay akışı için).
+  `OFIS_ALAN_ADI` tanımlıyken oturum çerezi `Secure` olur ve yalnız bu adres (ve localhost) kabul edilir.
+- **İlk kurulum kodu:** uygulama internete açıkken hesap açılmadan önce adresi bulan biri ofisi sahiplenemesin diye
+  sihirbaz, sunucu günlüğündeki tek kullanımlık 8 haneli kodu ister. Hesap açılınca kod geçersizleşir.
+- **Claude bağlantısı:** sihirbazda ya da üstteki **Claude** panelinden: **API anahtarı** (kaydetmeden önce ücretsiz
+  doğrulanır) ya da **Claude aboneliği** (kendi bilgisayarında `claude setup-token` çalıştır, çıkan `sk-ant-oat…`
+  metnini yapıştır). "Bağlantıyı dene" çok kısa bir çağrıyla birkaç token harcar. Anahtar tarayıcıya geri gönderilmez.
+- **Veriler** tek bir Docker volume'unda (`ofis-veri` → `/veri`): hesap, ajanlar, hafıza, çıktılar, ayarlar,
+  `CLAUDE.md` (sunucuda düzenlenebilir) ve Claude oturum kayıtları. Güncelleme: `git pull && docker compose up -d
+  --build` (veri kalır). Yedek: `docker run --rm -v ajan-ofisi_ofis-veri:/veri -v "$PWD":/yedek alpine tar czf
+  /yedek/ofis-yedek.tgz -C /veri .`
+- **Sunucuda ajanlar kısıtlı:** ajanların `claude` süreçleri ayrı bir kullanıcıyla (`ajan`) çalışır; hesap/oturum/ayar
+  dosyalarını (`/veri/gizli`) okuyamaz. "Komut çalıştırabilir" yetkisi sunucuda yalnız git, `ls` ve test komutlarını
+  verir; `env`, `printenv` ve `/proc` okumak yasaktır. Ajanlar yalnız `calisma/<ajan>` klasörlerinde çalışır. Amaç:
+  web'den okuduğu bir talimatla kandırılan bir ajan Claude anahtarını ya da hesabını ele geçiremesin.
+- **Şifre sıfırlama:** `docker compose exec ofis python sunucu.py --sifre-sifirla`
+- Sunucuda koşular pencere açmadan arka planda çalışır (ham çıktı `/veri/kosular/<id>.konsol.log`); terminal köprüsü
+  (bilgisayarındaki Claude Code oturumlarını gösteren özellik) sunucuda kapalıdır.
+
 ### Eğlence odası ve kedi yatakları
 Ofiste her zaman bir **Eğlence Odası** vardır (ajan atanmaz): PlayStation'lı TV, kanepe, bilardo, iki tavla masası,
 çay-kahve köşesi ve koltuklar. **Gündüz (08:00–19:59)** işi olmayan kediler masadan kalkıp buraya zıplar; kimi oyun
@@ -260,6 +291,8 @@ ajanına döner. Rapor model çağırmadan kayıtlardan derlenir.
 |---|---|
 | `sunucu.py` | HTTP + SSE sunucusu, giriş kapısı, CEO çağrısı, koşu başlatma (`--sifre-sifirla`) |
 | `hesap.py` | hesap, şifre özeti (scrypt), oturumlar, kaba kuvvet beklemesi |
+| `claude_baglanti.py` | Claude bağlantısı: API anahtarı/abonelik, doğrulama, panel işlemleri |
+| `Dockerfile`, `docker-compose.yml`, `docker/giris.sh` | sunucu sürümü (Docker Compose) |
 | `ajan_yonetimi.py` | `ajanlar.json` üzerinde doğrulanmış ajan/oda ekle-düzenle-sil, şablondan ekleme |
 | `sablonlar/` | sektör şablonları (`<id>.json`) |
 | `kosucu.py` | tek ajan koşusu (tmux penceresinde) |
