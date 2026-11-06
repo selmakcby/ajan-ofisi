@@ -286,8 +286,11 @@ and goes back to sleep. Nothing runs while idle: **0 tokens**.
 
 - **Try it without connecting anything:** `cd on-yuz && python3 -m http.server 8000`, open
   `http://127.0.0.1:8000/?demo=1`. Demo mode makes no backend requests.
-- **Connect your own agents:** `cp ajanlar.example.json ajanlar.json`, set each agent's `cwd` and preset prompts,
-  run `python3 sunucu.py` (stdlib only, binds to `127.0.0.1:8796`), open it in the browser.
+- **Set up:** run `python3 sunucu.py` (stdlib only, binds to `127.0.0.1:8796`) and open it in the browser. A setup
+  wizard asks your name, creates your account (scrypt-hashed password, HttpOnly session cookie, every API behind
+  login) and lets you start empty or from a sector template (software, influencer, digital marketing, e-commerce,
+  small-business front office, online course, consulting). Add, edit and remove agents and rooms later in the
+  **Ajanlar** tab. Forgot the password: `python3 sunucu.py --sifre-sifirla`.
 - **Architecture:** this folder is the "CEO" (main config). Every agent is a project folder (`cwd`). Office runs use
   `claude -p` in a tmux window, prompt via stdin, events streamed to the UI over SSE. The CEO is a single tool-less
   `claude -p --json-schema` call whose JSON plan is validated before anything starts.
