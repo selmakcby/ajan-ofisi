@@ -250,13 +250,14 @@ def bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini, kaynak=N
         "log": os.path.relpath(log_yolu, ortak.KOK),
         "cikti": os.path.relpath(cikti_yolu, ortak.KOK),
     }
-    ortak.olay_yaz(olay)
+    # Önce durum, sonra olay: izleyici kosu_bitti'yi gördüğünde ajan artık meşgul görünmemeli.
     durum = "cevap_bekliyor" if soru else ("bitti" if basarili else "hata")
     ortak.durum_yaz(ajan["id"], {"durum": durum, "kosu_id": baglam["kosu_id"],
                                  "pid": None, "bitis": ortak.simdi_iso(), "bitis_ts": time.time(),
                                  "sure_sn": sure, "ozet": temiz[:400], "hata": hata,
                                  "maliyet_usd": olay["maliyet_usd"], "cikti": olay["cikti"],
                                  "session_id": session_id, "soru": olay["soru"], "soru_tur": olay["soru_tur"]})
+    ortak.olay_yaz(olay)
     print(f"\n■ bitti · {sure} sn · maliyet_usd={olay['maliyet_usd']} · {olay['cikti']}", flush=True)
     if eklenen:
         print(f"  hafızaya eklendi: {eklenen}", flush=True)
