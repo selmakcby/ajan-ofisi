@@ -153,6 +153,40 @@ yeniden okunan bağlamdır (CLAUDE.md, önceki mesajlar); yeni işlenen iş değ
 toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdiği `total_cost_usd` toplamını gösterir
 (API liste fiyatı karşılığı; abonelikte faturaya yansıyan tutar değildir).
 
+### Telegram köprüsü: ofisi telefondan yönet
+Bilgisayar başında değilken ofise Telegram'dan yazarsın; ajanlar soru sorunca ya da bir şey ters gidince sana
+Telegram'dan ulaşır. Dinlemek **0 token**'dır (Telegram'a dışa doğru long polling; açık port, webhook yok).
+
+**Kurulum (2 dakika, dosya düzenlemeden):**
+1. Telegram'da **@BotFather**'a `/newbot` yaz, botuna ad ver; verdiği token'ı kopyala.
+2. Ofisi aç, sağ üstteki **Telegram** düğmesine bas, token'ı yapıştır, **Kaydet**. Sunucu token'ı Telegram'a
+   sorarak doğrular; botun adı görünür.
+3. Panel 6 haneli bir kod gösterir (10 dakika geçerli). Kendi botuna `/baslat <kod>` yaz. Panel "Bağlı" olur.
+   Bot artık **yalnız senin hesabını** dinler; başkalarının mesajlarına cevap bile vermez.
+
+Panelden gün sonu rapor saatini değiştirebilir, test mesajı gönderebilir, bağlantıyı kaldırabilirsin. Ayarlar
+`.env`'e yazılır (repoya girmez, ajanların okuması yasak); token tarayıcıya geri gönderilmez. İstersen
+`.env.example`'ı `.env` olarak kopyalayıp elle de kurabilirsin.
+
+**Kullanım:**
+- Düz mesaj → **CEO**. "Ne üzerinde çalışıyorsunuz?" gibi durum sorularına ofisin anlık durumuna bakarak
+  cevap verir, gerekirse iş dağıtır.
+- `@backend-gelistirici şu endpoint'i hızlandır` → CEO atlanır, **doğrudan o ajana** gider; bitince sonuç gelir.
+- Bot'un bir mesajına **Yanıtla** ile yazarsan o işe döner: ajanın sorusuna cevap verirsen ajan **aynı oturumu
+  kaldığı yerden sürdürür** (okuduğu dosyalar, yazdığı plan bağlamda kalır); sonuca "şunu da düzelt" dersen aynı
+  işe devam eder.
+- Sunucu kapalıyken yazdıkların (Telegram 24 saat saklar) sunucu açılınca sırayla, sorulmadan işlenir.
+
+**Soru soran ajan ve CEO'nun karar yetkisi:** ajan kararın gereken bir noktaya gelince işi bırakır ve
+`<soru tur="…">` ile sorar. `maliyet`, `buyuk-degisiklik`, `yayin-mail-para` türündeki sorular CEO'ya hiç
+sorulmadan **sana** gelir. Diğerlerinde CEO, `CLAUDE.md`'deki "Karar yetkisi" kurallarına göre ya kendisi cevap
+verir (ajan devam eder) ya da soruyu notuyla sana iletir; emin değilse sana sorar. CEO aynı işte en fazla 3 kez
+kendi cevap verir, 4. soru sana gelir. Cevap beklerken ajan token harcamaz; arayüzde "cevap bekliyor" görünür.
+
+**Aksilik ve rapor:** bir koşu hatayla biterse hemen haber gelir. CEO'nun kendi verdiği kararlar her gün rapor
+saatinde (varsayılan 18:00) numaralı tek mesaj olarak gelir; rapora Yanıtla ile `2 geri al` yazarsan 2. maddenin
+ajanına döner. Rapor model çağırmadan kayıtlardan derlenir.
+
 ### API
 | Uç | Ne |
 |---|---|
@@ -164,6 +198,8 @@ toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdi
 | `GET /api/token` | bugünkü ajan başına token |
 | `GET /api/sayac` | bugünkü koşu sayısı, aktif ajan, koşu başına süre/usage/maliyet |
 | `GET /api/hafiza` | `hafiza/<ajan>.md` başına madde sayısı ve son 3 madde |
+| `GET /api/telegram` | Telegram bağlantı durumu (token hiç dönmez, yalnız son 4 karakter) |
+| `POST /api/telegram` | `{"islem": "token"\|"kod"\|"rapor_saati"\|"test"\|"kaldir", …}` |
 
 ## Güvenlik notları
 - **Yalnız `127.0.0.1`.** `Host` ve `Origin` başlıkları yalnız localhost/127.0.0.1 kabul edilir (DNS rebinding ve
@@ -187,7 +223,12 @@ toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdi
 | `kosucu.py` | tek ajan koşusu (tmux penceresinde) |
 | `kopru.py` | terminal köprüsü (salt okuma) |
 | `token_sayac.py` | günlük token sayacı |
-| `ortak.py` | yollar, ajan tablosu, olay günlüğü |
+| `ortak.py` | yollar, ajan tablosu, olay günlüğü, `.env` okuma/yazma |
+| `telegram_kopru.py` | Telegram botu: long polling, yönlendirme, eşleştirme, gün sonu raporu, panel |
+| `akis.py` | olay izleyici: ajan soruları için CEO triyajı, aksilik/sonuç bildirimleri |
+| `sorular.py` | sorular, CEO kararları, Telegram mesaj eşlemesi, devam kuyruğu (`durum/` altında) |
+| `test_ofis.py` | bağımlılıksız self-check: `python test_ofis.py` |
+| `.env.example` | Telegram ayarları şablonu (panel kullanılıyorsa gerekmez) |
 | `ajanlar.example.json`, `kopru.example.json` | boş şablonlar |
 | `CLAUDE.md` | CEO anayasası şablonu |
 | `on-yuz/` | `index.html` (sahne + paneller), `kedi.js` (prosedürel kedi), `meme.js` (meme pozları), `portre.js` (panel avatarları), `dekor.js` (oda eşyaları), `demo-veri.json` |

@@ -333,7 +333,7 @@ def ajanlar_yaniti():
         disari = {k: v for k, v in a.items() if k not in ("cwd", "hazir_gorevler", "yasak_araclar")}
         disari["hazir_gorevler"] = [{"etiket": g["etiket"]} for g in a.get("hazir_gorevler", [])]
         liste.append({**disari, "durum": durum, "son_kosu": {k: d.get(k) for k in (
-            "kosu_id", "durum", "bitis", "sure_sn", "ozet", "hata", "maliyet_usd") if k in d} or None})
+            "kosu_id", "durum", "bitis", "sure_sn", "ozet", "hata", "maliyet_usd", "soru") if k in d} or None})
     odalar = [o for o in (veri.get("odalar") or []) if isinstance(o, dict) and isinstance(o.get("id"), str)
               and ortak.ODA_ID_DESENI.fullmatch(o["id"])]
     return {"ajanlar": liste, "odalar": odalar, "ayarlar": ortak.ayarlar(veri), "tmux_oturum": TMUX_OTURUM}

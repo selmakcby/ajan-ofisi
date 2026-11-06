@@ -897,7 +897,7 @@ function ekranCiz(a) {
   ctx.fillStyle = a.durum === 'bitti' ? '#5aa06e' : '#ff7a59'; ctx.fillRect(0, 0, EW, 46);
   ctx.fillStyle = '#fff'; ctx.font = '600 20px Inter'; ctx.fillText(kisalt(ctx, a.ad, EW - 170), 22, 30);
   ctx.font = '500 15px Inter'; ctx.textAlign = 'right';
-  ctx.fillText(a.durum === 'bitti' ? 'BİTTİ' : a.durum === 'dusunuyor' ? 'DÜŞÜNÜYOR' : 'ÇALIŞIYOR · ' + gecenSn(a) + ' sn', EW - 22, 29); ctx.textAlign = 'left';
+  ctx.fillText(a.durum === 'bitti' ? (a.soru ? 'CEVAP BEKLİYOR' : 'BİTTİ') : a.durum === 'dusunuyor' ? 'DÜŞÜNÜYOR' : 'ÇALIŞIYOR · ' + gecenSn(a) + ' sn', EW - 22, 29); ctx.textAlign = 'left';
   if (a.durum === 'bitti') {
     ctx.fillStyle = '#5aa06e'; ctx.font = '700 64px "Space Grotesk"'; ctx.fillText('✓', 22, 150);
     ctx.fillStyle = '#3b342c'; ctx.font = '600 20px Inter'; ctx.fillText(kisalt(ctx, a.is || 'iş bitti', EW - 110), 86, 118);
@@ -1221,7 +1221,8 @@ function ajanUyut(a) {
   a.yuzMat.map = YUZ.uyku; ekranYenile(a); ustGuncelle(); panelYenile();
 }
 function ajanBitir(a, o) {
-  Object.assign(a, { durum:'bitti', sonSure:Math.round(o.sure_sn ?? gecenSn(a)), sonOzet:temizMetin(o.ozet).slice(0, 120) });
+  Object.assign(a, { durum:'bitti', soru:!!o.soru, sonSure:Math.round(o.sure_sn ?? gecenSn(a)),
+    sonOzet:temizMetin(o.soru ? '❓ ' + o.soru : o.ozet).slice(0, 120) });
   a.yuzMat.map = o.durum === 'hata' ? YUZ.uyku : YUZ.mutlu;
   ekranYenile(a); ustGuncelle(); panelYenile();
   clearTimeout(a.uykuZamanlayici);
@@ -1435,6 +1436,7 @@ function ilkDurum() {
     const a = ajanBul(x.id); if (!a) return;
     if (x.son_kosu?.ozet) a.sonOzet = temizMetin(x.son_kosu.ozet).slice(0, 120);
     if (x.durum === 'calisiyor') { ajanUyandir(a, 'çalışıyor', x.son_kosu?.kosu_id || null, Date.now()); a.kosuId = null; a.eylem = 'çalışıyor'; }
+    if (x.durum === 'cevap_bekliyor') Object.assign(a, { durum:'bitti', soru:true, sonOzet:temizMetin('❓ ' + (x.son_kosu?.soru || '')).slice(0, 120) });
     ekranYenile(a);
   });
 }
@@ -1587,7 +1589,7 @@ let panelAjan = null, panelOda = null;
 function panelKapat() { panel.classList.remove('acik'); panelAjan = panelOda = null; odaVurgu(null); }
 function durumMetni(a) {
   if (a.durum === 'uyku') { const m = uykuMetni(a); return m[0].toUpperCase() + m.slice(1); }
-  if (a.durum === 'bitti') return '✓ Bitti · ' + (a.sonSure ?? '?') + ' sn';
+  if (a.durum === 'bitti') return a.soru ? '❓ Cevap bekliyor' : '✓ Bitti · ' + (a.sonSure ?? '?') + ' sn';
   if (a.durum === 'bekliyor') return 'İş yolda…';
   if (a.durum === 'dusunuyor') return 'Düşünüyor…';
   return (a.eylem || 'Çalışıyor') + ' · ' + gecenSn(a) + ' sn';
