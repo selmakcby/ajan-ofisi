@@ -2233,6 +2233,20 @@ def test_telegram_proje_ekle_bot(tmp):
     assert api.gonderilen[-1][1].startswith("⚠")
 
 
+# ---------- Toplantı odası (ön yüz mantığı, node ile) ----------
+
+def test_toplanti_mantik_node():
+    import shutil as _sh
+    import subprocess as _sp
+    node = _sh.which("node")
+    if not node:
+        print("    (node yok: toplantı odası mantık testi atlandı)")
+        return
+    kok = os.path.dirname(os.path.abspath(__file__))
+    r = _sp.run([node, os.path.join(kok, "test_toplanti.mjs")], capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0 and "OK" in r.stdout, r.stdout + r.stderr
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")  # Windows'ta yönlendirilmiş çıktı cp1254 olabilir
     sys.stderr.reconfigure(encoding="utf-8")

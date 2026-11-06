@@ -341,6 +341,8 @@ import { portreleriUret } from './portre.js';
 import { dekorKur, masaLambasi } from './dekor.js';
 import { eglenceKur, tasmaYerleri, yatakKur, balonDoku } from './eglence.js';
 import { geceMi, saatAl, yerAta, balonMetni, sonrakiBalon, TUR_MS } from './eglence-mantik.js';
+import { toplantiKur } from './toplanti.js';
+import { masaUzunlugu, toplantidaMi, tvSatirlari } from './toplanti-mantik.js';
 
 const PARAM = new URLSearchParams(location.search);
 const DEMO = PARAM.get('demo') === '1';
@@ -366,6 +368,8 @@ const TEMALAR = {
   posta:{ hali1:'#c9566e', hali2:'#86cf9f', ad:'Posta Odası', zemin:'#fbdde3', duvar:'#ef8fa2', aciklama:'Gelen kutusunu okur, eler. Yalnız istekte “mail” geçince çalışır; cevap hep taslak.' },
   _eglence:{ hali1:'#e0703f', hali2:'#7fc8a9', ad:'Eğlence Odası', w:14, d:10, zemin:'#fbeedd', duvar:'#f2b26b', eglence:true,
     aciklama:'Boştaki kediler gündüz burada: PlayStation, bilardo, tavla, çay-kahve. Sohbetleri “miyav”dan ibaret; model çağrısı yok, 0 token.' },
+  _toplanti:{ hali1:'#4b5bb0', hali2:'#f6c35c', ad:'Toplantı Odası', zemin:'#eef0f8', duvar:'#9aa6d8', toplanti:true,
+    aciklama:'Açık proje varken her gün 09:00 ve 17:00’de CEO toplantı yapar; çağırdığı kediler masaya oturur. Toplantı tek CEO çağrısıdır, kediler yalnız miyavlar.' },
   veri:{ hali1:'#4b5bb0', hali2:'#6cc3c8', ad:'Veri Odası', zemin:'#e1e5f6', duvar:'#8a98d8', aciklama:'Link ve kaynak deposunu her sabah ayıklar.', not:'Dışarıdan gelen içerik ajana talimat olarak gitmez, veri olarak gelir. Ajan web’de gözü kapalı gezinmez.\nİki yan masa (kaynak taraması, link deposu) aynı Veri ajanının alt masalarıdır.' },
 };
 // bilinmeyen oda id'si için krem-pastel setler: [hali1, hali2, zemin, duvar]
@@ -816,6 +820,12 @@ const EGLENCE = { id:'_eglence', tema:'_eglence', ...odaTema('_eglence') };
 EGLENCE.w0 = EGLENCE.w; EGLENCE.d0 = EGLENCE.d; EGLENCE.yerler = [];
 let gece = geceMi(saatAl(location.search)); // 20:00–07:59; ?saat=23 ile denenir
 ODALAR.push(EGLENCE);
+// toplantı odası: her zaman var, ajan atanmaz; masada CEO başta, diğerleri ajanlar.json sırasıyla (hiyerarşi)
+const TOPLANTI_SIRA = ['ceo', ...yerlesecek.map(a => a.id).filter(id => id !== 'ceo')];
+const TOPLANTI = { id:'_toplanti', tema:'_toplanti', ...odaTema('_toplanti'), yerler:new Map() };
+TOPLANTI.w = TOPLANTI.w0 = Math.max(ODA_W, masaUzunlugu(TOPLANTI_SIRA.length) + 5); TOPLANTI.d = TOPLANTI.d0 = ODA_D;
+ODALAR.push(TOPLANTI);
+const TOPLANTI_DURUM = { aktif:null, projeler:[], saatler:null };
 yerlesimKur(ODALAR);
 AJANLAR = yerlesecek.map(a => ({ ...a, ...yerHesapla(a, yerlesecek) }));
 const KULLANICI = String(apiAyarlar.kullanici || '').slice(0, 40);
@@ -850,14 +860,16 @@ gunes.shadow.camera.updateProjectionMatrix();
 const secilebilir = [];
 function odaAltYazi(oda) {
   if (oda.eglence) return 'Boştaki kediler gündüz burada';
+  if (oda.toplanti) return 'Açık proje varken günde iki toplantı';
   const n = AJANLAR.filter(a => a.oda === oda.id).length;
   if (oda.id === 'ceo') return 'Yalnız onunla konuşursun';
   return n + ' ajan · ' + (AJANLAR.find(a => a.oda === oda.id)?.ne_zaman_metin || 'istek gelince');
 }
 function zeminCiz(oda) {
   const { ctx, t } = oda.zeminDoku;
-  const n = oda.eglence ? AJANLAR.filter(a => a.yerAnahtar?.startsWith('eg:')).length : AJANLAR.filter(a => a.oda === oda.id).length;
-  const m = oda.eglence ? 0 : AJANLAR.filter(a => a.oda === oda.id && a.durum && a.durum !== 'uyku' && a.durum !== 'bitti').length;
+  const ozel = oda.eglence ? 'eg:' : oda.toplanti ? 'tp:' : null;
+  const n = ozel ? AJANLAR.filter(a => a.yerAnahtar?.startsWith(ozel)).length : AJANLAR.filter(a => a.oda === oda.id).length;
+  const m = ozel ? 0 : AJANLAR.filter(a => a.oda === oda.id && a.durum && a.durum !== 'uyku' && a.durum !== 'bitti').length;
   const anahtar = n + '|' + m; if (oda.zeminAnahtar === anahtar) return; oda.zeminAnahtar = anahtar;
   ctx.clearRect(0, 0, 1024, 160);
   ctx.fillStyle = 'rgba(59,52,44,.82)';
@@ -931,7 +943,7 @@ function camOda(oda, g) {
   kutu(g, 2.2, .04, .2, mat('#ff7a59', { emissive:'#ff7a59', emissiveIntensity:.25 }), 0, .14, oda.d / 2, .02, false);
 }
 ODALAR.forEach(odaKur);
-dekorKur(ODALAR.filter(o => !o.eglence));
+dekorKur(ODALAR.filter(o => !o.eglence && !o.toplanti));
 
 /* ---------- dekor ---------- */
 function bitki(g, x, z, s = 1) {
@@ -988,6 +1000,7 @@ function rafDizisi(g, x, zler, renk = '#4a4f53') {
 const ARACLAR = { kutu, mat, aoLeke, tuvalDoku };
 const TEMA_DEKOR = {
   _eglence:g => { Object.assign(EGLENCE, eglenceKur(g, EGLENCE, ARACLAR)); }, // yerler, tv, bilardo
+  _toplanti:g => { Object.assign(TOPLANTI, toplantiKur(g, TOPLANTI, TOPLANTI_SIRA, ARACLAR)); },  // yerler, tv
   yazi:g => { bitki(g, 4.2, 2.6); raf(g, -3.6, -3.3, 2.0); kutu(g, 1.2, .9, .9, '#e5a089', 4.0, .55, -2.8, .2); },
   kod:g => bitki(g, -4.2, 2.6),
   tasarim:g => {
@@ -1322,6 +1335,12 @@ function atamaGuncelle(t) {
 }
 function kediHedefi(a) {
   if (a.durum !== 'uyku' || a.memeAktif) return a.masaYeri;           // iş var (ya da meme): masaya
+  const tp = TOPLANTI_DURUM.aktif;                                     // toplantı gece/eğlence kuralından önce gelir
+  if (toplantidaMi(tp, Date.now()) && (tp.katilimcilar || []).includes(a.id) && TOPLANTI.yerler.has(a.id)) {
+    const y = TOPLANTI.yerler.get(a.id);
+    return a.toplantiYeri ||= { anahtar:'tp:' + a.id, pos:new THREE.Vector3(TOPLANTI.cx + y.x, y.y, TOPLANTI.cz + y.z), ry:y.ry,
+      durum:a.id === 'ceo' ? 'sohbet' : 'dinleniyor' };
+  }
   if (gece) return a.yatakYeri || a.masaYeri;
   const i = atama.get(a.id), y = EGLENCE.yerler[i];
   if (y === undefined) return a.masaYeri;
@@ -1329,8 +1348,14 @@ function kediHedefi(a) {
     : (a.eglenceYeri = { i, anahtar:'eg:' + i, pos:new THREE.Vector3(EGLENCE.cx + y.x, y.y, EGLENCE.cz + y.z), ry:y.ry, durum:y.durum });
 }
 let tvZaman = 0;
+let toplantiTvZaman = -9;
 function eglenceGuncelle(t, dt) { // TV'de dövüş (saniyede 12 kare), masada yuvarlanan bilardo topları
   if (t - tvZaman > 1 / 12) { EGLENCE.tv.ciz(t - tvZaman); tvZaman = t; }
+  if (t - toplantiTvZaman > 1 && TOPLANTI.tv) { // toplantı TV'si: saniyede bir
+    toplantiTvZaman = t;
+    const aktif = toplantidaMi(TOPLANTI_DURUM.aktif, Date.now()) ? TOPLANTI_DURUM.aktif : null;
+    TOPLANTI.tv.ciz(tvSatirlari(aktif, TOPLANTI_DURUM.projeler, TOPLANTI_DURUM.saatler, new Date()));
+  }
   EGLENCE.bilardo.adim(dt);
 }
 const aciFark = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
@@ -1352,7 +1377,7 @@ function kediYuru(a, t) {
   }
   // miyav balonu: yalnız eğlence odasında, yerine varmışken
   const sc = a.olcek;
-  if (a.yerAnahtar.startsWith('eg:') && !a.yol && !gece) {
+  if (!a.yol && ((a.yerAnahtar.startsWith('eg:') && !gece) || a.yerAnahtar === 'tp:ceo')) { // toplantıda yalnız CEO miyavlar
     if (t > a.balonT) {
       if (a.balon.visible) { a.balon.visible = false; a.balonT = t + sonrakiBalon(Math.random()); }
       else { a.balon.material.map = balonDoku(balonMetni(Math.random()), tuvalDoku); a.balon.material.needsUpdate = true; a.balon.visible = true; a.balonT = t + 2.4; }
@@ -1650,6 +1675,16 @@ function olayIsle(o) {
       } else if (a && o.ozet) a.sonOzet = temizMetin(o.ozet).slice(0, 120);
       sayacTazele(); if (!tekrar) sorularRozetTazele();
     },
+    toplanti_basladi() {
+      if (tekrar) return; // sayfa açılırken eski olay: güncel durum /api/projeler'den gelir
+      TOPLANTI_DURUM.aktif = { konu:o.konu, katilimcilar:o.katilimcilar || [], ozet:o.ozet || '', bitis:o.bitis };
+      if (Array.isArray(o.projeler)) TOPLANTI_DURUM.projeler = o.projeler;
+      akisEkle('ceo', 'Toplantı başladı: ' + (o.konu || ''), '', '', zaman);
+    },
+    toplanti_bitti() {
+      if (tekrar) return;
+      TOPLANTI_DURUM.aktif = null; toplantiDurumYukle(); sorularRozetTazele();
+    },
     ceo_basladi() {
       if (tekrar || !a) return;
       Object.assign(a, { durum:'dusunuyor', is:'seni dinliyor', eylem:'düşünüyor…', t0:zaman.getTime() });
@@ -1793,7 +1828,7 @@ async function terminalleriYukle() {
 }
 
 /* ---------- gerçek bağlantı ---------- */
-const TURLER = ['kosu_basladi', 'ilerledi', 'kosu_bitti', 'ceo_basladi', 'ceo_bitti', 'hata', 'terminal_durum', 'terminal_arac', 'token'];
+const TURLER = ['kosu_basladi', 'ilerledi', 'kosu_bitti', 'ceo_basladi', 'ceo_bitti', 'hata', 'terminal_durum', 'terminal_arac', 'token', 'toplanti_basladi', 'toplanti_bitti'];
 function modGoster(tip, yazi) { const m = $('mod'); m.className = 'mod ' + tip; $('modYazi').textContent = yazi; }
 async function sayacYukle() {
   if (DEMO) { ustGuncelle(); return; }
@@ -2078,7 +2113,7 @@ function odaPaneli(oda) {
   panelAjan = null; panelOda = oda.id;
   const kapat = el('button', 'kapat', '×'); kapat.onclick = () => { SES.tik(); panelKapat(); };
   const liste = el('div', 'ajan-liste');
-  AJANLAR.filter(a => oda.eglence ? a.yerAnahtar?.startsWith('eg:') : a.oda === oda.id).forEach(a => {
+  AJANLAR.filter(a => oda.eglence ? a.yerAnahtar?.startsWith('eg:') : oda.toplanti ? a.yerAnahtar?.startsWith('tp:') : a.oda === oda.id).forEach(a => {
     const b = el('button'); const ad = el('span', 'ad-avatar'); ad.append(avatar(a.id, 'orta'), document.createTextNode(a.ad));
     b.append(ad, el('small', null, durumMetni(a)));
     b.onmouseenter = () => SES.uzerinde();
@@ -2087,6 +2122,12 @@ function odaPaneli(oda) {
   });
   const p = el('p', 'oda-etiket', oda.aciklama); p.style.cssText = 'font-size:13px;line-height:1.45;color:#6d6357;margin-bottom:6px';
   const araclar = AJANLAR.filter(a => a.oda === oda.id).flatMap(a => a.izinli_araclar || []);
+  if (oda.toplanti) { // ajan atanmaz: yalnız şu an toplantıda olanlar
+    const aktif = toplantidaMi(TOPLANTI_DURUM.aktif, Date.now()) ? TOPLANTI_DURUM.aktif : null;
+    if (!liste.children.length) liste.append(el('small', null, aktif ? 'Çağrılanlar yolda.' : tvSatirlari(null, TOPLANTI_DURUM.projeler, TOPLANTI_DURUM.saatler, new Date()).slice(1).join(' · ')));
+    panel.replaceChildren(kapat, el('div', 'oda-etiket', 'Oda'), el('h2', null, oda.ad), p, el('h3', null, aktif ? 'Toplantıda: ' + (aktif.konu || '') : 'Şu an burada'), liste);
+    return panel.classList.add('acik');
+  }
   if (oda.eglence) { // ajan atanmaz: yalnız şu an molada olanlar
     if (!liste.children.length) liste.append(el('small', null, gece ? 'Gece: herkes kendi odasının yatağında uyuyor.' : 'Şu an molada kimse yok; herkes işinde.'));
     panel.replaceChildren(kapat, el('div', 'oda-etiket', 'Oda'), el('h2', null, oda.ad), p, el('h3', null, 'Şu an burada'), liste);
@@ -2353,7 +2394,7 @@ async function projeIslem(govde, basarili) {
   const { durum, veri } = await postJSON('/api/projeler', govde);
   if (durum !== 200) { tost(veri.hata || 'İşlem yapılamadı.'); return false; }
   if (veri.mesaj) tost(veri.mesaj); else if (basarili) tost(basarili);
-  sekmeAc('projeler'); sorularRozetTazele();
+  sekmeAc('projeler'); sorularRozetTazele(); toplantiDurumYukle();
   return true;
 }
 function projeFormu() {
@@ -2480,6 +2521,14 @@ async function sorularSayfasi() {
   }
   return parcalar;
 }
+async function toplantiDurumYukle() {
+  if (DEMO) return;
+  try {
+    const v = await getJSON('/api/projeler');
+    TOPLANTI_DURUM.aktif = v.toplanti?.aktif || null; TOPLANTI_DURUM.saatler = v.toplanti?.saatler || null;
+    TOPLANTI_DURUM.projeler = (v.projeler || []).filter(p => p.durum === 'acik').map(p => ({ baslik:p.baslik, ilerleme:p.ilerleme }));
+  } catch { /* sessiz: TV "Toplantı yok" gösterir */ }
+}
 function rozetYaz(n) { const r = $('soruRozet'); if (!r) return; r.hidden = !n; r.textContent = n ? String(n) : ''; }
 let rozetZamanlayici = null;
 async function sorularRozetTazele() {
@@ -2508,7 +2557,7 @@ function maliyetSayfasi() {
   return [el('h2', null, 'Maliyet'), el('p', 'alt', sayac.maliyet_notu || 'Ajanlar yalnız iş gelince çalışır; boştayken model çağrısı yok.'), ozet, tablo];
 }
 document.querySelectorAll('#sekmeler button').forEach(b => { b.onclick = () => { SES.tik(); sekmeAc(b.dataset.sekme); }; b.onmouseenter = () => SES.uzerinde(); });
-sorularRozetTazele();
+sorularRozetTazele(); toplantiDurumYukle();
 
 /* ---------- kamera ---------- */
 let gecis = null;
