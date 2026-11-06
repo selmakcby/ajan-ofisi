@@ -7,7 +7,13 @@ Kalıcı dosya: durum/token-<YYYY-MM-DD>.json
 Kayıtlar "ekle" değil "yerine koy" ile yazılır: aynı koşu/oturum yeniden sayılırsa çift sayılmaz.
 Süreçler arası (sunucu + kosucu) fcntl kilidiyle korunur.
 """
-import fcntl
+import os
+import sys
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 import json
 import os
 from contextlib import contextmanager

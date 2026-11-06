@@ -1,10 +1,17 @@
 """Ajan Ofisi ortak yardımcıları: yollar, ajan tablosu, olay günlüğü, durum dosyaları."""
-import fcntl
+from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 import os
 import re
+import sys
 import time
-from datetime import datetime, timezone
+
+if sys.platform == "win32":
+    import ctypes
+    import msvcrt
+else:
+    import fcntl
 
 KOK = os.path.dirname(os.path.abspath(__file__))
 # Yapılandırma: ajanlar.example.json'ı ajanlar.json olarak kopyala (ajanlar.json .gitignore'da).
@@ -40,7 +47,8 @@ def ajanlari_yukle():
             veri = json.load(f)
     except FileNotFoundError as e:
         raise YapilandirmaHatasi(
-            f"{os.path.basename(AJANLAR_DOSYASI)} yok. Önce: cp ajanlar.example.json ajanlar.json") from e
+            f"{os.path.basename(AJANLAR_DOSYASI)} yok. Önce: cp ajanlar.example.json ajanlar.json"
+        ) from e
     if not isinstance(veri, dict) or not isinstance(veri.get("ajanlar"), list):
         raise YapilandirmaHatasi("ajanlar.json içinde 'ajanlar' listesi olmalı")
     tablo = {}
@@ -51,26 +59,54 @@ def ajanlari_yukle():
         if not isinstance(oda, str) or not ODA_ID_DESENI.fullmatch(oda):
             raise ValueError(f"geçersiz oda id: {oda!r} (ajan {ajan['id']})")
         kurulu = os.path.isdir(os.path.expanduser(ajan.get("cwd") or ""))
-        tablo[ajan["id"]] = {**ajan, "oda": oda, "cwd": os.path.expanduser(ajan.get("cwd") or ""), "kurulu": kurulu}
+        tablo[ajan["id"]] = {
+            **ajan,
+            "oda": oda,
+            "cwd": os.path.expanduser(ajan.get("cwd") or ""),
+            "kurulu": kurulu,
+        }
     return veri, tablo
 
 
 def ayarlar(veri):
     """Arayüz ayarları: kullanıcı adı (selamlama) ve marka. İkisi de isteğe bağlı."""
     a = veri.get("ayarlar") if isinstance(veri.get("ayarlar"), dict) else {}
-    return {"kullanici": str(a.get("kullanici") or "")[:40], "marka": str(a.get("marka") or "Ajan Ofisi")[:40]}
+    return {
+        "kullanici": str(a.get("kullanici") or "")[:40],
+        "marka": str(a.get("marka") or "Ajan Ofisi")[:40],
+    }
+
+
+@contextmanager
+def dosya_kilidi(f):
+    """Platform bağımsız dosya kilitleme bağlam yöneticisi."""
+    fd = f.fileno()
+    if sys.platform == "win32":
+        # Windows: Dosyanın başından 1 baytlık alanı kilitler
+        f.seek(0)
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        f.seek(0, os.SEEK_END)
+        try:
+            yield
+        finally:
+            f.seek(0)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            f.seek(0, os.SEEK_END)
+    else:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def olay_yaz(olay):
     """olaylar.jsonl'e tek satır ekler (süreçler arası kilitli)."""
     satir = json.dumps({"zaman": simdi_iso(), **olay}, ensure_ascii=False)
     with open(OLAYLAR, "a", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
+        with dosya_kilidi(f):
             f.write(satir + "\n")
             f.flush()
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def durum_yolu(ajan_id):
@@ -93,15 +129,41 @@ def durum_yaz(ajan_id, durum):
 
 
 def surec_yasiyor(pid):
+    """Verilen PID'ye sahip sürecin çalışıp çalışmadığını platforma uygun kontrol eder."""
     if not pid:
         return False
     try:
-        os.kill(int(pid), 0)
-        return True
-    except (ProcessLookupError, ValueError):
+        pid = int(pid)
+    except ValueError:
         return False
-    except PermissionError:
-        return True
+
+    if sys.platform == "win32":
+        # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        SYNCHRONIZE = 0x00100000
+        STILL_ACTIVE = 259
+
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid
+        )
+        if not handle:
+            return False
+
+        try:
+            exit_code = ctypes.c_ulong()
+            if ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return exit_code.value == STILL_ACTIVE
+            return False
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, ValueError):
+            return False
+        except PermissionError:
+            return True
 
 
 def ajan_mesgul(ajan_id):
@@ -111,5 +173,4 @@ def ajan_mesgul(ajan_id):
         return False
     if surec_yasiyor(d.get("pid")):
         return True
-    # tmux penceresi açılırken pid henüz yazılmamış olabilir
     return d.get("durum") == "basliyor" and time.time() - d.get("baslangic_ts", 0) < 30
