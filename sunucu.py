@@ -69,7 +69,7 @@ OFIS_DURUMU_MAKS = 3000
 
 CEREZ_ADI = "ofis_oturum"
 # Girişsiz açık uçlar (kurulum adımlarının kendi kuralları kurulum_islem içinde).
-ACIK_UCLAR = {("GET", "/api/oturum"), ("POST", "/api/oturum"), ("POST", "/api/kurulum")}
+ACIK_UCLAR = {("GET", "/api/oturum"), ("POST", "/api/oturum"), ("POST", "/api/kurulum"), ("GET", "/api/saglik")}
 
 
 def cerez(token):
@@ -245,7 +245,7 @@ def claude_json(prompt, model, sema, log_id, zaman_asimi=CEO_ZAMAN_ASIMI):
     claude = shutil.which("claude") or "/opt/homebrew/bin/claude"
     komut = [claude, "-p", "--model", model, "--output-format", "json",
              "--no-session-persistence", "--tools", "", "--json-schema", json.dumps(sema)]
-    surec = subprocess.run(komut, cwd=ortak.KOK, input=prompt, text=True, encoding="utf-8", errors="replace",
+    surec = subprocess.run(komut, cwd=ortak.VERI, input=prompt, text=True, encoding="utf-8", errors="replace",
                            capture_output=True, timeout=zaman_asimi, env=ortak.alt_surec_ortami())
     with open(os.path.join(ortak.KOSU_DIZINI, f"{log_id}.log"), "w", encoding="utf-8") as f:
         f.write(surec.stdout + ("\n--- stderr ---\n" + surec.stderr if surec.stderr else ""))
@@ -633,6 +633,8 @@ class Isleyici(SimpleHTTPRequestHandler):
         yol = urlparse(self.path)
         if not self._kapi("GET", yol.path):
             return
+        if yol.path == "/api/saglik":  # Docker healthcheck (girişsiz)
+            return self._json(200, {"durum": "ok"})
         if yol.path == "/api/oturum":
             return self._json(200, oturum_yaniti(self._token()))
         if yol.path == "/api/ajanlar":
@@ -789,13 +791,14 @@ def main():
         return sifre_sifirla_komutu()
     for d in (ortak.DURUM_DIZINI, ortak.KOSU_DIZINI, ortak.CIKTI_DIZINI, ortak.HAFIZA_DIZINI, ON_YUZ):
         os.makedirs(d, exist_ok=True)
+    ortak.claude_md_tohumla()  # sunucuda CEO anayasası veri klasöründe düzenlenebilir
     try:
         ortak.ajanlari_yukle()  # eksikse en küçük yapılandırma yazılır; bozuksa hemen düş
     except (ortak.YapilandirmaHatasi, ValueError, json.JSONDecodeError) as e:
         raise SystemExit(f"Ajan Ofisi başlatılamadı: {e}")
     token_sayac.olaylardan_geri_kur(olaylari_oku())  # bugünkü eski koşuların usage'ı sayaçta yoksa ekle
     sunucu, port = bos_port_ile_ac()
-    with open(os.path.join(ortak.KOK, "port"), "w") as f:
+    with open(os.path.join(ortak.VERI, "port"), "w") as f:
         f.write(str(port))
     print(f"Ajan Ofisi: http://{HOST}:{port}   (demo: http://{HOST}:{port}/?demo=1)", flush=True)
     KOPRU.baslat()

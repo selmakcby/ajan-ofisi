@@ -767,7 +767,7 @@ def test_ajanlar_json_yoksa_en_kucuk(tmp):
     ortak.AJANLAR_DOSYASI = os.path.join(tmp, "ajanlar.json")
     veri, tablo = ortak.ajanlari_yukle()
     assert list(tablo) == ["ceo"] and tablo["ceo"]["kurulu"] and os.path.exists(ortak.AJANLAR_DOSYASI)
-    assert tablo["ceo"]["cwd"] == ortak.KOK
+    assert tablo["ceo"]["cwd"] == ortak.VERI
 
 
 def test_ajan_ekle_guncelle_sil(tmp):
@@ -1269,6 +1269,53 @@ def test_eglence_mantik_node():
     assert r.returncode == 0 and "OK" in r.stdout, r.stdout + r.stderr
 
 
+# ---------- Sunucu T1: veri kökü, gizli dizin, CLAUDE.md, sağlık ----------
+
+def _alt_ortak(tmp, kod, **env):
+    """ortak'ı verilen ortam değişkenleriyle ayrı bir süreçte içe aktarıp kodu çalıştırır; JSON döndürür."""
+    import subprocess as _sp
+    kok = os.path.dirname(os.path.abspath(__file__))
+    ortam = {k: v for k, v in os.environ.items() if not k.startswith("OFIS_")}
+    ortam.update(env)
+    r = _sp.run([sys.executable, "-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import ortak; " + kod, kok],
+                capture_output=True, text=True, encoding="utf-8", env=ortam)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)
+
+
+def test_veri_koku_ortamdan(tmp):
+    kod = ("print(json.dumps({'ajanlar': ortak.AJANLAR_DOSYASI, 'durum': ortak.DURUM_DIZINI, 'olaylar': ortak.OLAYLAR, "
+           "'kosu': ortak.KOSU_DIZINI, 'cikti': ortak.CIKTI_DIZINI, 'hafiza': ortak.HAFIZA_DIZINI, "
+           "'gizli': ortak.gizli_dizin(), 'env': ortak.env_dosyasi(), 'cwd': ortak.cwd_coz('calisma/x'), "
+           "'sunucu': ortak.SUNUCU}))")
+    v = _alt_ortak(tmp, kod, OFIS_VERI=tmp)
+    for k in ("ajanlar", "durum", "olaylar", "kosu", "cikti", "hafiza", "cwd", "env"):
+        assert os.path.normpath(v[k]).startswith(os.path.normpath(tmp)), (k, v[k])
+    assert v["gizli"] == v["durum"] and os.path.normpath(v["env"]) == os.path.join(os.path.normpath(tmp), ".env")
+    assert v["sunucu"] is False
+    s = _alt_ortak(tmp, kod, OFIS_VERI=tmp, OFIS_SUNUCU="1")
+    assert os.path.normpath(s["gizli"]) == os.path.join(os.path.normpath(tmp), "gizli") and s["sunucu"] is True
+    assert os.path.normpath(s["env"]) == os.path.join(os.path.normpath(tmp), "gizli", ".env")
+
+
+def test_claude_md_tohum(tmp):
+    _alt_ortak(tmp, "ortak.claude_md_tohumla(); print('1')", OFIS_VERI=tmp)
+    yol = os.path.join(tmp, "CLAUDE.md")
+    kaynak = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "CLAUDE.md"), encoding="utf-8").read()
+    assert open(yol, encoding="utf-8").read() == kaynak
+    open(yol, "w", encoding="utf-8").write("benim kurallarım")
+    _alt_ortak(tmp, "ortak.claude_md_tohumla(); print('1')", OFIS_VERI=tmp)
+    assert open(yol, encoding="utf-8").read() == "benim kurallarım"  # kullanıcının düzenlemesi ezilmez
+
+
+def test_saglik_girissiz(tmp):
+    s = _sunucu(tmp)
+    try:
+        assert s.istek("GET", "/api/saglik") == (200, {"durum": "ok"}, None)
+    finally:
+        s.kapat()
+
+
 # ---------- koşucu ----------
 
 def main():
@@ -1277,12 +1324,12 @@ def main():
     testler = [(ad, f) for ad, f in globals().items() if ad.startswith("test_") and callable(f)]
     if len(sys.argv) > 1:
         testler = [(ad, f) for ad, f in testler if any(s in ad for s in sys.argv[1:])]
-    asil_durum, asil_ajanlar, asil_kok = ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI, ortak.KOK
+    asil_durum, asil_ajanlar, asil_kok, asil_veri = ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI, ortak.KOK, ortak.VERI
     hatali = 0
     for ad, f in testler:
         tmp = tempfile.mkdtemp(prefix="ofis-test-")
         ortak.DURUM_DIZINI = os.path.join(tmp, "durum")
-        ortak.KOK = tmp  # göreli çalışma klasörleri (calisma/<id>) gerçek repoya düşmesin
+        ortak.KOK = ortak.VERI = tmp  # göreli çalışma klasörleri (calisma/<id>) gerçek repoya düşmesin
         os.makedirs(ortak.DURUM_DIZINI)
         try:
             f(tmp) if inspect.signature(f).parameters else f()
@@ -1292,7 +1339,7 @@ def main():
             print(f"  ✗ {ad}")
             traceback.print_exc()
         finally:
-            ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI, ortak.KOK = asil_durum, asil_ajanlar, asil_kok
+            ortak.DURUM_DIZINI, ortak.AJANLAR_DOSYASI, ortak.KOK, ortak.VERI = asil_durum, asil_ajanlar, asil_kok, asil_veri
             shutil.rmtree(tmp, ignore_errors=True)
     print(f"{len(testler) - hatali}/{len(testler)}")
     if hatali:

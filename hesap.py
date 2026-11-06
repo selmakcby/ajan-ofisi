@@ -27,7 +27,7 @@ _hata = {"sayi": 0, "son": 0.0}  # ponytail: bellek içi; sunucu yeniden başlar
 
 
 def _yol(ad):
-    return os.path.join(ortak.DURUM_DIZINI, ad)
+    return os.path.join(ortak.gizli_dizin(), ad)
 
 
 def _oku(ad, varsayilan):
@@ -39,7 +39,7 @@ def _oku(ad, varsayilan):
 
 
 def _yaz(ad, veri):
-    os.makedirs(ortak.DURUM_DIZINI, exist_ok=True)
+    os.makedirs(ortak.gizli_dizin(), exist_ok=True)
     ortak.atomik_yaz(_yol(ad), json.dumps(veri), ortak.ENV_IZIN)
 
 

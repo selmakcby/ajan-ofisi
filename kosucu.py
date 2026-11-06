@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ortak  # noqa: E402
 import token_sayac  # noqa: E402
 
-YALIN_DIZIN = os.path.join(ortak.KOK, "durum", "yalin-cwd")
+YALIN_DIZIN = os.path.join(ortak.VERI, "durum", "yalin-cwd")
 BEKLEME_SN = int(os.environ.get("OFIS_PENCERE_BEKLE", "90"))
 HAFIZA_DESENI = re.compile(r"<hafiza_ekle>(.*?)</hafiza_ekle>", re.S)
 # Esnek: tek/çift/tırnaksız tur, büyük harf, kapanmamış blok (çıktı kesildiyse) da soru sayılır.
@@ -182,7 +182,7 @@ def kos(arg_dosyasi):
                                  "baslangic": ortak.simdi_iso(), "baslangic_ts": baslangic,
                                  "etiket": arg.get("etiket")})
     ortak.olay_yaz({**baglam, "tur": "kosu_basladi", "model": ajan["model"],
-                    "etiket": arg.get("etiket"), "log": os.path.relpath(log_yolu, ortak.KOK)})
+                    "etiket": arg.get("etiket"), "log": os.path.relpath(log_yolu, ortak.VERI)})
     print(f"▶ {ajan['ad']} ({ajan['model']}) · {ajan['cwd']}\n  görev: {gorev[:200]}\n", flush=True)
 
     sonuc, hata = None, None
@@ -251,8 +251,8 @@ def bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini, kaynak=N
         "tur_sayisi": (sonuc or {}).get("num_turns"),
         "claude_sure_ms": (sonuc or {}).get("duration_ms"),
         "hafiza_eklendi": eklenen,
-        "log": os.path.relpath(log_yolu, ortak.KOK),
-        "cikti": os.path.relpath(cikti_yolu, ortak.KOK),
+        "log": os.path.relpath(log_yolu, ortak.VERI),
+        "cikti": os.path.relpath(cikti_yolu, ortak.VERI),
     }
     # Önce durum, sonra olay: izleyici kosu_bitti'yi gördüğünde ajan artık meşgul görünmemeli.
     durum = "cevap_bekliyor" if soru else ("bitti" if basarili else "hata")

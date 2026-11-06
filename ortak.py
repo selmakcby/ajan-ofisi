@@ -16,12 +16,33 @@ else:
 
 KOK = os.path.dirname(os.path.abspath(__file__))
 # Yapılandırma: ajanlar.example.json'ı ajanlar.json olarak kopyala (ajanlar.json .gitignore'da).
-AJANLAR_DOSYASI = os.environ.get("OFIS_AJANLAR", os.path.join(KOK, "ajanlar.json"))
-OLAYLAR = os.path.join(KOK, "olaylar.jsonl")
-DURUM_DIZINI = os.path.join(KOK, "durum")
-KOSU_DIZINI = os.path.join(KOK, "kosular")
-CIKTI_DIZINI = os.path.join(KOK, "cikti")
-HAFIZA_DIZINI = os.path.join(KOK, "hafiza")
+# Veri kökü: sunucuda (Docker) tek volume (OFIS_VERI=/veri); yerelde kod klasörü (bugünkü davranış).
+VERI = os.environ.get("OFIS_VERI") or KOK
+SUNUCU = os.environ.get("OFIS_SUNUCU") == "1"  # sunucu modu: gizli dizin, ajan kısıtları (bkz. sunucu_araclari)
+AJANLAR_DOSYASI = os.environ.get("OFIS_AJANLAR", os.path.join(VERI, "ajanlar.json"))
+OLAYLAR = os.path.join(VERI, "olaylar.jsonl")
+DURUM_DIZINI = os.path.join(VERI, "durum")
+KOSU_DIZINI = os.path.join(VERI, "kosular")
+CIKTI_DIZINI = os.path.join(VERI, "cikti")
+HAFIZA_DIZINI = os.path.join(VERI, "hafiza")
+
+
+def gizli_dizin():
+    """Hesap, oturumlar ve .env: sunucuda ajanların okuyamadığı VERI/gizli (0700); yerelde durum/ (bugünkü)."""
+    return os.path.join(VERI, "gizli") if SUNUCU else DURUM_DIZINI
+
+
+def env_dosyasi():
+    return os.path.join(gizli_dizin(), ".env") if SUNUCU else os.path.join(VERI, ".env")
+
+
+def claude_md_tohumla():
+    """Veri kökü kod klasöründen ayrıysa CEO anayasasını oraya bir kez kopyalar (sunucuda düzenlenebilsin)."""
+    hedef = os.path.join(VERI, "CLAUDE.md")
+    if os.path.normpath(VERI) != os.path.normpath(KOK) and not os.path.exists(hedef):
+        os.makedirs(VERI, exist_ok=True)
+        with open(os.path.join(KOK, "CLAUDE.md"), encoding="utf-8") as f:
+            atomik_yaz(hedef, f.read())
 
 MAKS_GIRDI = 4000
 MAKS_HAFIZA_EKI = 1200
@@ -72,7 +93,7 @@ def cwd_coz(cwd):
     if not cwd:
         return ""
     yol = os.path.expanduser(cwd)
-    return os.path.normpath(yol if os.path.isabs(yol) else os.path.join(KOK, yol))
+    return os.path.normpath(yol if os.path.isabs(yol) else os.path.join(VERI, yol))
 
 
 def ajanlari_yukle():
@@ -229,7 +250,6 @@ def ajan_mesgul(ajan_id):
 
 # ---------- .env ve Telegram ayarı ----------
 # .env repoya girmez (.gitignore) ve ajanların okuması varsayilan_yasak_araclar ile yasaktır.
-ENV_DOSYASI = os.path.join(KOK, ".env")
 ENV_SATIRI = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
 SAAT_DESENI = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 ENV_IZIN = 0o600  # .env yalnız sahibi okuyabilsin (paylaşılan Linux/macOS makineleri)
@@ -243,7 +263,7 @@ def alt_surec_ortami():
 def env_oku(yol=None):
     """ANAHTAR=deger satırlarını okur; # ve boş satırlar atlanır, tırnaklar soyulur. Dosya yoksa {}."""
     try:
-        with open(yol or ENV_DOSYASI, encoding="utf-8") as f:
+        with open(yol or env_dosyasi(), encoding="utf-8") as f:
             satirlar = f.read().splitlines()
     except FileNotFoundError:
         return {}
@@ -261,7 +281,8 @@ def env_oku(yol=None):
 
 def env_yaz(guncel, yol=None):
     """Verilen anahtarları günceller (yoksa sona ekler), None olanları siler; diğer satırlar aynen kalır."""
-    yol = yol or ENV_DOSYASI
+    yol = yol or env_dosyasi()
+    os.makedirs(os.path.dirname(yol), exist_ok=True)
     try:
         with open(yol, encoding="utf-8") as f:
             satirlar = f.read().splitlines()
