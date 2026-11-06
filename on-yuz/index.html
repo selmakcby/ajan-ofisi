@@ -176,6 +176,23 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 .izgara .kart li{font-size:12.5px;line-height:1.4;color:#5d5348;padding-left:10px;position:relative}
 .izgara .kart li::before{content:"";position:absolute;left:0;top:7px;width:4px;height:4px;border-radius:50%;background:var(--mercan)}
 .izgara .kart button.git{margin-top:8px;font-size:12px;font-weight:600;color:var(--mercan-k)}
+/* Ajanlar sayfası */
+.arac-cubugu{display:flex;gap:8px;margin:0 0 16px}
+.izgara .kart .oda-adi{font-size:11.5px;color:var(--soluk);margin-top:2px}
+.izgara .kart .islemler{display:flex;gap:12px;margin-top:10px}
+.izgara .kart .islemler button{font-size:12px;font-weight:600;color:var(--mercan-k)}
+.izgara .kart .islemler button.sil{color:#a1402a}
+.form-a{max-width:640px}
+.form-a label{display:block;font-size:12.5px;font-weight:600;color:var(--soluk);margin:14px 0 5px}
+.form-a input[type=text],.form-a select,.form-a textarea{width:100%;padding:9px 11px;border-radius:10px;border:1px solid rgba(59,52,44,.15);background:#fff;font:inherit;font-size:14px;color:var(--murekkep)}
+.form-a textarea{min-height:70px;resize:vertical}
+.form-a details{margin-top:18px;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.55)}
+.form-a summary{cursor:pointer;font-weight:600;font-size:13.5px}
+.form-a .kutucuk{display:flex;gap:8px;align-items:center;font-weight:500;color:var(--murekkep);margin:6px 0}
+.form-a .gorev{display:grid;grid-template-columns:1fr auto;gap:6px;margin:8px 0;padding:8px;border-radius:10px;background:rgba(255,255,255,.7)}
+.form-a .gorev textarea{grid-column:1 / -1;min-height:56px}
+.form-a .dugmeler-a{display:flex;gap:10px;margin-top:20px}
+.form-a .ipucu{font-size:12px;color:var(--soluk);margin-top:4px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--soluk);font-weight:600;padding:8px 10px;border-bottom:1px solid rgba(59,52,44,.12)}
 td{padding:9px 10px;border-bottom:1px solid rgba(59,52,44,.06);font-variant-numeric:tabular-nums}
@@ -256,6 +273,7 @@ td.sayi,th.sayi{text-align:right}
   <nav class="sekmeler" id="sekmeler">
     <button data-sekme="ofis" class="secili">Ofis</button>
     <button data-sekme="odalar">Odalar</button>
+    <button data-sekme="ajanlar">Ajanlar</button>
     <button data-sekme="hafiza">Hafıza</button>
     <button data-sekme="maliyet">Maliyet</button>
   </nav>
@@ -697,7 +715,9 @@ const yerlesecek = apiAjanlar.filter(a => a && typeof a.id === 'string').map(a =
 ODALAR = [...new Set(['ceo', ...apiOdalar.map(o => o?.id), ...yerlesecek.map(a => a.oda)])]
   .filter(id => odaIdGecerli(id) && (id === 'ceo' || yerlesecek.some(a => a.oda === id)))
   .map(id => {
-    const o = { id, ...odaTema(id) }, c = apiOdalar.find(x => x?.id === id);
+    const c = apiOdalar.find(x => x?.id === id);
+    const tema = c && typeof c.tema === 'string' && Object.hasOwn(TEMALAR, c.tema) ? c.tema : id; // seçilen görünüm, yoksa id
+    const o = { id, tema, ...odaTema(tema) };
     if (c) ['ad', 'aciklama', 'not'].forEach(k => { if (typeof c[k] === 'string') o[k] = c[k].slice(0, k === 'ad' ? 40 : 600); });
     odaOlcu(o, yerlesecek); return o;
   });
@@ -909,11 +929,11 @@ const TEMA_DEKOR = {
     bitki(g, -4.2, 2.7, .9);
   },
 };
-ODALAR.forEach(o => TEMA_DEKOR[o.id]?.(o.grup));
+ODALAR.forEach(o => TEMA_DEKOR[o.tema]?.(o.grup));
 
 /* ---------- ilham panosu (tasarım stüdyosu): prosedürel kartlar, dosya yüklenmez ---------- */
 (() => {
-  const oda = odaBul('tasarim'); if (!oda) return;
+  const oda = ODALAR.find(o => o.tema === 'tasarim'); if (!oda) return;
   const g = oda.grup;
   const yerler = [-4.1, -3.15, -2.2, 2.2, 3.15, 4.1];
   const paletler = [['#ff7a59', '#fff1e3', '#3b342c'], ['#7fc8a9', '#f6efe2', '#2f8f97'], ['#f2c14e', '#fff8e8', '#c95c45'],
@@ -1918,9 +1938,161 @@ async function sekmeAc(ad) {
   document.querySelectorAll('#sekmeler button').forEach(b => b.classList.toggle('secili', b.dataset.sekme === ad));
   if (ad === 'ofis') { sayfa.classList.remove('acik'); return; }
   panelKapat();
-  const icerik = ad === 'odalar' ? odalarSayfasi() : ad === 'hafiza' ? await hafizaSayfasi() : maliyetSayfasi();
+  const icerik = ad === 'odalar' ? odalarSayfasi() : ad === 'ajanlar' ? await ajanlarSayfasi() : ad === 'hafiza' ? await hafizaSayfasi() : maliyetSayfasi();
   if (aktifSekme !== ad) return;
   sayfa.replaceChildren(...icerik); sayfa.classList.add('acik');
+}
+/* ---------- Ajanlar sayfası: ekle / düzenle / sil / şablondan ekle ---------- */
+const YETKI_ADLARI = [['okuma', 'Yalnız okuyabilir'], ['yazma', 'Dosya yazabilir'], ['komut', 'Komut çalıştırabilir'], ['web', 'Web’e bakabilir']];
+const YETKI_ARACLARI = { okuma:['Read', 'Glob', 'Grep'], yazma:['Write', 'Edit'], komut:['Bash'], web:['WebSearch', 'WebFetch'] };
+const TEMA_SECENEK = ['yazi', 'kod', 'tasarim', 'sosyal', 'arastirma', 'gun-sonu', 'atolye', 'bakim', 'posta', 'veri'];
+function sonraBildir(metin) { try { sessionStorage.setItem('ofis-bildirim', metin); } catch { /* yoksa sessiz */ } location.reload(); }
+async function ajanlarSayfasi() {
+  if (DEMO) return [el('h2', null, 'Ajanlar'), el('p', 'alt', 'Demo modunda ajan düzenleme kapalı.')];
+  let v;
+  try { v = await getJSON('/api/ajanlar'); } catch { return [el('h2', null, 'Ajanlar'), el('p', 'alt', 'Ajan listesi alınamadı.')]; }
+  const odaAdi = id => (v.odalar.find(o => o.id === id)?.ad) || TEMALAR[id]?.ad || odaAdTuret(id);
+  const arac = el('div', 'arac-cubugu');
+  const ekle = el('button', 'koyu', '+ Ajan ekle'); ekle.onclick = () => { SES.tik(); ajanFormu(null, v); };
+  const sablon = el('button', 'dugme', 'Şablondan ekle'); sablon.onclick = () => { SES.tik(); sablonSecici(); };
+  arac.append(ekle, sablon);
+  const iz = el('div', 'izgara');
+  v.ajanlar.forEach(a => {
+    const k = el('div', 'kart');
+    const islem = el('div', 'islemler');
+    const duz = el('button', null, 'Düzenle');
+    duz.onclick = async () => { SES.tik(); try { ajanFormu(await getJSON('/api/ajanlar/' + encodeURIComponent(a.id)), v); } catch { tost('Ajan bilgisi alınamadı.'); } };
+    islem.append(duz);
+    if (a.id !== 'ceo') {
+      const sil = el('button', 'sil', 'Sil');
+      sil.onclick = async () => {
+        if (!confirm(`${a.ad} ofisten çıkarılsın mı? Hafızası ve çıktıları diskte kalır.`)) return;
+        const { durum, veri } = await postJSON('/api/ajanlar', { islem:'sil', id:a.id });
+        if (durum === 200) return sonraBildir(a.ad + ' ofisten çıkarıldı.');
+        tost(durum === 409 ? 'Ajan şu an çalışıyor; bitince tekrar dene.' : (veri.hata || 'Silinemedi.'));
+      };
+      islem.append(sil);
+    }
+    k.append(el('h4', null, a.ad), el('div', 'oda-adi', odaAdi(a.oda || 'genel')), el('p', null, a.aciklama || ''), islem);
+    iz.append(k);
+  });
+  return [el('h2', null, 'Ajanlar'), el('p', 'alt', `${v.ajanlar.length} ajan. Ekle, düzenle ya da sektör şablonundan hazır ajanlar al. Değişiklik hemen ofise yansır.`), arac, iz];
+}
+function sayfaGoster(...icerik) { sayfa.replaceChildren(...icerik); sayfa.scrollTop = 0; }
+function ajanFormu(a, v) {
+  const yeni = !a;
+  a = a || { ad:'', oda:'', aciklama:'', model:'sonnet', izinli_araclar:['Read', 'Glob', 'Grep'], hazir_gorevler:[], cwd:'' };
+  const f = el('form', 'form-a');
+  const etiket = (metin, girdi) => { const l = el('label', null, metin); f.append(l, girdi); return girdi; };
+  const metin = (deger, ipucu) => { const i = el('input'); i.type = 'text'; i.value = deger || ''; if (ipucu) i.placeholder = ipucu; return i; };
+  const ad = etiket('Ad', metin(a.ad, 'ör. Blog Yazarı')); ad.maxLength = 60; ad.required = true;
+  // oda: var olanlar + yeni oda
+  const odalar = [...new Map([...v.odalar.map(o => [o.id, o.ad || odaAdTuret(o.id)]),
+    ...v.ajanlar.map(x => [x.oda || 'genel', (v.odalar.find(o => o.id === (x.oda || 'genel'))?.ad) || odaAdTuret(x.oda || 'genel')])])]
+    .filter(([id]) => id !== 'ceo');
+  const oda = el('select');
+  odalar.forEach(([id, ad]) => { const o = el('option', null, ad); o.value = id; oda.append(o); });
+  const yeniO = el('option', null, '+ Yeni oda…'); yeniO.value = '__yeni'; oda.append(yeniO);
+  oda.value = a.oda && odalar.some(([id]) => id === a.oda) ? a.oda : (odalar[0]?.[0] || '__yeni');
+  etiket('Oda', oda);
+  const yeniKutu = el('div');
+  const yeniAd = metin('', 'ör. Muhasebe'); yeniAd.maxLength = 60;
+  const tema = el('select'); const varsay = el('option', null, 'Kendiliğinden (renk adından)'); varsay.value = ''; tema.append(varsay);
+  TEMA_SECENEK.forEach(t => { const o = el('option', null, (TEMALAR[t]?.ad || t)); o.value = t; tema.append(o); });
+  yeniKutu.append(el('label', null, 'Yeni odanın adı'), yeniAd, el('label', null, 'Görünüm'), tema);
+  const odaGuncelle = () => { yeniKutu.style.display = oda.value === '__yeni' ? '' : 'none'; };
+  oda.onchange = odaGuncelle; f.append(yeniKutu); odaGuncelle();
+  const ac = el('textarea'); ac.value = a.aciklama || ''; ac.maxLength = 500; ac.placeholder = 'CEO işi dağıtırken bunu okur. ör. Proje notlarından blog taslağı çıkarır.';
+  etiket('Ne iş yapar', ac);
+  // gelişmiş
+  const det = el('details'); det.append(el('summary', null, 'Gelişmiş'));
+  const dl = (metin2, girdi, ipucu) => { det.append(el('label', null, metin2), girdi); if (ipucu) det.append(el('div', 'ipucu', ipucu)); return girdi; };
+  const cwd = dl('Çalışma klasörü', metin(a.cwd && a.cwd !== 'calisma/' + a.id ? a.cwd : '', 'Boş bırakırsan ofisin içinde ajana özel klasör açılır'),
+    'Var olan bir proje klasörünün tam yolunu yazabilirsin. Klasör yoksa ajan “kurulmadı” görünür.');
+  const model = el('select'); [['sonnet', 'Sonnet (dengeli)'], ['haiku', 'Haiku (hızlı, ekonomik)'], ['opus', 'Opus (en güçlü)']].forEach(([d, m]) => { const o = el('option', null, m); o.value = d; model.append(o); });
+  model.value = ['sonnet', 'haiku', 'opus'].includes(a.model) ? a.model : 'sonnet';
+  dl('Model', model);
+  det.append(el('label', null, 'Yetkiler'));
+  const araclar = el('textarea'); araclar.value = (a.izinli_araclar || []).join('\n');
+  const kutular = YETKI_ADLARI.map(([k, ad2]) => {
+    const l = el('label', 'kutucuk'); const c = el('input'); c.type = 'checkbox'; c.value = k;
+    c.checked = YETKI_ARACLARI[k].every(x => (a.izinli_araclar || []).includes(x));
+    if (k === 'okuma') { c.checked = true; c.disabled = true; }
+    c.onchange = () => { // araç listesini işaretlerle eşitle
+      const liste = araclar.value.split('\n').map(s => s.trim()).filter(Boolean).filter(x => !YETKI_ARACLARI[k].includes(x));
+      araclar.value = (c.checked ? [...liste, ...YETKI_ARACLARI[k]] : liste).join('\n');
+    };
+    l.append(c, document.createTextNode(ad2)); det.append(l); return c;
+  });
+  const arDet = el('details'); arDet.append(el('summary', null, 'Araç listesi (ileri düzey)'), araclar,
+    el('div', 'ipucu', 'Her satıra bir Claude Code aracı. Güvenlik yasakları (.env okuma, rm, git push…) her ajana ayrıca eklenir.'));
+  det.append(arDet);
+  det.append(el('label', null, 'Hazır görevler'));
+  const gorevler = el('div'); det.append(gorevler);
+  const gorevEkle = g => {
+    const s = el('div', 'gorev'); const e = metin(g?.etiket, 'Düğme adı, ör. Taslak yaz'); e.maxLength = 60;
+    const sil = el('button', 'dugme', 'Sil'); sil.type = 'button'; sil.onclick = () => s.remove();
+    const p = el('textarea'); p.value = g?.prompt || ''; p.maxLength = 4000; p.placeholder = 'Ajan bu düğmeye basınca ne yapsın?';
+    s.append(e, sil, p); gorevler.append(s);
+  };
+  (a.hazir_gorevler || []).forEach(gorevEkle);
+  const gEkle = el('button', 'dugme', '+ Görev ekle'); gEkle.type = 'button'; gEkle.onclick = () => gorevEkle(); det.append(gEkle);
+  const yalinL = el('label', 'kutucuk'); const yalin = el('input'); yalin.type = 'checkbox'; yalin.checked = !!a.yalin;
+  yalinL.append(yalin, document.createTextNode('Yalın mod (genel ayarlar yüklenmez; küçük işlerde daha az token)')); det.append(yalinL);
+  const tetik = dl('Tetik kelime', metin(a.tetik_kelime, 'Boş: CEO her istekte iş verebilir'), 'Doluysa CEO bu ajana yalnız istekte bu kelime geçince iş verir.');
+  tetik.maxLength = 40;
+  f.append(det);
+  const kaydet = el('button', 'koyu', yeni ? 'Ajanı ekle' : 'Kaydet'); kaydet.type = 'submit';
+  const vazgec = el('button', 'dugme', 'Vazgeç'); vazgec.type = 'button'; vazgec.onclick = () => sekmeAc('ajanlar');
+  const alt = el('div', 'dugmeler-a'); alt.append(kaydet, vazgec); f.append(alt);
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const ajan = { ad:ad.value.trim(), aciklama:ac.value.trim(), model:model.value, cwd:cwd.value.trim(),
+      izinli_araclar:[...new Set(araclar.value.split('\n').map(s => s.trim()).filter(Boolean))],
+      hazir_gorevler:[...gorevler.children].map(s => ({ etiket:s.children[0].value.trim(), prompt:s.children[2].value.trim() })).filter(g => g.etiket || g.prompt),
+      yalin:yalin.checked, tetik_kelime:tetik.value.trim() };
+    if (a.id === 'ceo') { delete ajan.cwd; } // CEO ofis klasöründe kalır
+    if (oda.value === '__yeni') { if (!yeniAd.value.trim()) return tost('Yeni odanın adını yaz.'); ajan.yeni_oda = { ad:yeniAd.value.trim(), tema:tema.value || null }; }
+    else if (a.id !== 'ceo') ajan.oda = oda.value;
+    kaydet.disabled = true;
+    const { durum, veri } = await postJSON('/api/ajanlar', yeni ? { islem:'ekle', ajan } : { islem:'guncelle', id:a.id, ajan });
+    kaydet.disabled = false;
+    if (durum === 200) return sonraBildir((yeni ? 'Eklendi: ' : 'Kaydedildi: ') + veri.ad);
+    tost(veri.hata || 'Kaydedilemedi.');
+  };
+  if (a.id === 'ceo') { oda.disabled = true; cwd.disabled = true; }
+  sayfaGoster(el('h2', null, yeni ? 'Yeni ajan' : a.ad), el('p', 'alt', yeni ? 'Yalnız ad zorunlu; gerisini sonra da değiştirebilirsin.' : 'Ajan kimliği değişmez; adını değiştirebilirsin.'), f);
+  setTimeout(() => ad.focus(), 0);
+}
+async function sablonSecici() {
+  let liste;
+  try { liste = (await getJSON('/api/sablonlar')).sablonlar; } catch { return tost('Şablonlar alınamadı.'); }
+  const iz = el('div', 'izgara'); const secim = el('div');
+  liste.forEach(s => {
+    const k = el('div', 'kart'); const sec = el('button', 'git', 'Seç →');
+    sec.onclick = () => {
+      SES.tik();
+      const f = el('div', 'form-a'); const kutular = [];
+      s.ajanlar.forEach(a => {
+        const l = el('label', 'kutucuk'); const c = el('input'); c.type = 'checkbox'; c.checked = true; c.value = a.id;
+        l.append(c, document.createTextNode(a.ad + ' — ' + a.aciklama)); f.append(l); kutular.push(c);
+      });
+      const ekle = el('button', 'koyu', 'Seçili ajanları ekle');
+      ekle.onclick = async () => {
+        const secili = kutular.filter(c => c.checked).map(c => c.value);
+        if (!secili.length) return tost('En az bir ajan seç.');
+        const { durum, veri } = await postJSON('/api/ajanlar', { islem:'sablon', sablon:s.id, ajanlar:secili });
+        if (durum !== 200) return tost(veri.hata || 'Eklenemedi.');
+        sonraBildir(`${veri.eklenen.length} ajan eklendi` + (veri.atlanan.length ? `, ${veri.atlanan.length} zaten vardı.` : '.'));
+      };
+      const alt = el('div', 'dugmeler-a'); alt.append(ekle); f.append(alt);
+      secim.replaceChildren(el('h3', null, s.ad), f); secim.scrollIntoView({ behavior:'smooth' });
+    };
+    k.append(el('h4', null, s.ad), el('p', null, s.aciklama), el('div', 'oda-adi', s.ajanlar.map(a => a.ad).join(', ')), sec);
+    iz.append(k);
+  });
+  const geri = el('button', 'dugme', '← Ajanlar'); geri.onclick = () => sekmeAc('ajanlar');
+  sayfaGoster(el('h2', null, 'Şablondan ekle'), el('p', 'alt', 'Sektörüne uygun hazır ajanları seç. Ofiste zaten olan ajanlar ikinci kez eklenmez.'), geri, iz, secim);
 }
 function odalarSayfasi() {
   const iz = el('div', 'izgara');
@@ -2064,6 +2236,7 @@ function tgCiz(kutu, d, mesaj) {
 }
 $('telegramDugme').onclick = () => { SES.tik(); telegramPaneli(); };
 if (DEMO) $('cikisDugme').style.display = 'none';
+try { const b = sessionStorage.getItem('ofis-bildirim'); if (b) { sessionStorage.removeItem('ofis-bildirim'); tost(b); } } catch { /* yok */ }
 $('cikisDugme').onclick = async () => { await postJSON('/api/oturum', { islem:'cikis' }).catch(() => {}); location.reload(); };
 
 /* ---------- kedi meme'leri (tıklanınca) ---------- */
