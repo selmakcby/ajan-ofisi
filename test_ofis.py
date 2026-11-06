@@ -50,6 +50,37 @@ def test_env_yaz(tmp):
     assert ortak.env_oku(os.path.join(tmp, "olmayan.env")) == {"YENI": "x"}
 
 
+# ---------- Task 2: koşucu soru bloğu ve sürdürme ----------
+
+def test_soru_ayikla():
+    import kosucu
+    assert kosucu.soru_ayikla("bitti") is None
+    assert kosucu.soru_ayikla('x <soru tur="diger">Plan uygun mu?</soru>') == {"soru": "Plan uygun mu?", "tur": "diger"}
+    assert kosucu.soru_ayikla('<soru tur="maliyet">SMS?</soru>')["tur"] == "maliyet"
+
+
+def test_soru_ayikla_bozuk():
+    import kosucu
+    assert kosucu.soru_ayikla("<soru>tur yok</soru>")["tur"] == "eksik"
+    assert kosucu.soru_ayikla('<soru tur="uydurma">a</soru>')["tur"] == "eksik"
+    assert kosucu.soru_ayikla('<soru tur="diger">a</soru><soru tur="diger">b</soru>') == {"soru": "a\nb", "tur": "eksik"}
+    assert kosucu.soru_ayikla('<soru tur="diger">  </soru>') == {"soru": "", "tur": "eksik"}
+
+
+def test_komut_kur_devam():
+    import kosucu
+    ajan = {"model": "haiku", "cwd": ".", "izinli_araclar": []}
+    k = kosucu.komut_kur(ajan, [], "cikti")
+    assert "--no-session-persistence" not in k and "--resume" not in k
+    k = kosucu.komut_kur(ajan, [], "cikti", devam_session="abc")
+    assert k[k.index("--resume") + 1] == "abc"
+
+
+def test_soru_temizle():
+    import kosucu
+    assert kosucu.soru_temizle('Plan hazır.\n<soru tur="diger">Uygun mu?</soru>') == "Plan hazır."
+
+
 # ---------- koşucu ----------
 
 def main():
