@@ -1238,6 +1238,23 @@ def test_buyuk_ajan_formu_kaydedilir(tmp):  # küçük → önemli: 10 × 4000 k
         s.kapat()
 
 
+def test_kopan_baglanti_sessiz():  # tarayıcı isteği iptal edince (WinError 10053) yığın izi basılmaz
+    import contextlib
+    import io as _io
+    import sunucu
+    h = sunucu.Isleyici.__new__(sunucu.Isleyici)
+    gonderilen = []
+    h._json = lambda *a, **k: gonderilen.append(a)
+    for hata in (ConnectionAbortedError(10053, "iptal"), ConnectionResetError(), BrokenPipeError()):
+        cikti = _io.StringIO()
+
+        def isle(h_=hata):
+            raise h_
+        with contextlib.redirect_stderr(cikti):
+            h._korumali(isle)
+        assert cikti.getvalue() == "" and gonderilen == [], type(hata).__name__
+
+
 # ---------- koşucu ----------
 
 def main():

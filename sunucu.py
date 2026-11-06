@@ -611,7 +611,7 @@ class Isleyici(SimpleHTTPRequestHandler):
         """Beklenmeyen hata bağlantıyı düşürmesin: JSON 500 döner, ayrıntı yalnız sunucu loguna."""
         try:
             isle()
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:  # tarayıcı isteği iptal etti (BrokenPipe/Reset/Aborted, Windows 10053): sessiz
             pass
         except Exception as e:  # noqa: BLE001
             import traceback
