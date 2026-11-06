@@ -10,6 +10,7 @@ import os
 import sys
 import threading
 import time
+from datetime import datetime
 
 import ortak
 import projeler
@@ -19,6 +20,13 @@ OTOMATIK_SINIR = 3
 CEVAPLAYAN = {"ceo-zaman-asimi": "CEO, 1 saat dolunca", "kullanici-web": "web", "kullanici-telegram": "Telegram"}
 TELEGRAM_KAYNAKLARI = ("telegram", "telegram-ceo")
 ARALIK_SN = 1.0
+PERIYOT_SN = 30  # 1 saat kuralı ve toplantı zamanlayıcısı bu aralıkla bakılır
+ZAMAN_ASIMI_SN = 3600
+GUVENLI_CEVAP = ("Kullanıcı 1 saat içinde cevap vermedi. Güvenli taraf: para harcatan, ücretli servis ekleyen, "
+                 "büyük değişiklik ya da yeni entegrasyon gerektiren, yayın/mail/ödeme yapan yolu SEÇME. Bu kısmı "
+                 "yapmadan, ücretsiz ve geri alınabilir yolla işin geri kalanına devam et; atladığın kısmı çıktında "
+                 "açıkça yaz.")
+TOPLANTI_ZAMAN_ASIMI_NOTU = "Kullanıcı 1 saat içinde cevap vermedi; bu konuda güvenli/varsayılan yolla devam edilecek."
 
 
 class Izleyici:
@@ -213,6 +221,7 @@ class Izleyici:
 
     def dongu(self):
         ofset = self._ofset_oku()
+        son_periyot = 0.0
         while True:
             try:
                 ofset = self.tur(ofset)
@@ -220,7 +229,60 @@ class Izleyici:
             except OSError as e:
                 sys.stderr.write(f"izleyici: {type(e).__name__}: {e}\n")
                 time.sleep(10)
+            if time.time() - son_periyot >= PERIYOT_SN:
+                son_periyot = time.time()
+                for islev in (self.zaman_asimi_isle, self.zamanlayici):
+                    try:
+                        if islev:
+                            islev()
+                    except Exception as e:  # noqa: BLE001 — izleyici düşmez
+                        sys.stderr.write(f"izleyici: periyodik iş ({type(e).__name__}: {e})\n")
             time.sleep(ARALIK_SN)
+
+    # ---------- 1 saat kuralı ----------
+
+    def zaman_asimi_isle(self, simdi_ts=None):
+        """Kullanıcıya gidip 1 saat cevapsız kalan soruları CEO cevaplar (önemli türlerde sabit güvenli cevap)."""
+        simdi = time.time() if simdi_ts is None else simdi_ts
+        for s in sorular.bekleyen_sorular():
+            try:
+                yas = simdi - datetime.fromisoformat(s.get("zaman") or "").timestamp()
+            except (TypeError, ValueError):
+                continue
+            if yas < ZAMAN_ASIMI_SN or s.get("kaynak") == "bitti_mi":
+                continue  # "bitti mi?" yalnız kullanıcının kararı
+            sid, ajan, session_id = s["soru_id"], s.get("ajan"), s.get("session_id")
+            if s.get("kaynak") == "toplanti":
+                if not sorular.cevap_kilitle(sid, TOPLANTI_ZAMAN_ASIMI_NOTU, "ceo-zaman-asimi"):
+                    continue
+                try:
+                    projeler.not_ekle(s.get("proje_id"), TOPLANTI_ZAMAN_ASIMI_NOTU, "ceo")
+                except ValueError:
+                    pass
+                cevap = TOPLANTI_ZAMAN_ASIMI_NOTU
+                kim = f"CEO'nun sorusu ({(projeler.al(s.get('proje_id')) or {}).get('baslik', 'proje')})"
+            else:
+                if session_id and sorular.otomatik_sayi(session_id) >= OTOMATIK_SINIR:
+                    if not s.get("sinir_bildirildi"):
+                        sorular.soru_guncelle(sid, sinir_bildirildi=True)
+                        self.bildir(f"⏸ {ajan} {OTOMATIK_SINIR} kez otomatik cevap aldı; devam için senin "
+                                    "cevabın gerekiyor", {"tip": "soru", "soru_id": sid, "ajan": ajan,
+                                                         "session_id": session_id})
+                    continue
+                cevap = None
+                if s.get("tur") == "diger":
+                    try:
+                        cevap = self.zaman_asimi_cevabi(ajan, s.get("soru") or "", s.get("bildirim") or "")
+                    except Exception:  # noqa: BLE001
+                        cevap = None
+                cevap = cevap or GUVENLI_CEVAP
+                self.soru_cevapla(sid, cevap, "ceo-zaman-asimi")
+                if (sorular.soru_al(sid) or {}).get("cevaplayan") != "ceo-zaman-asimi":
+                    continue  # bu arada kullanıcı cevapladı
+                kim = f"{ajan} sorusuna"
+            sorular.karar_ekle({"ajan": ajan, "soru": s.get("soru"), "cevap": cevap, "gerekce": "1 saat cevap yok",
+                                "kosu_id": s.get("kosu_id"), "session_id": session_id})
+            self.bildir(f"⏱ {kim} 1 saat içinde cevap gelmedi, CEO cevapladı: {cevap}", None)
 
     def baslat(self):
         threading.Thread(target=self.dongu, name="olay-izleyici", daemon=True).start()
