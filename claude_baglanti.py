@@ -51,6 +51,8 @@ def baglanti_dene(env_yolu=None):
         sonuc = json.loads(r.stdout)
     except subprocess.TimeoutExpired:
         raise ValueError("Claude 60 saniyede cevap vermedi.") from None
+    except OSError:
+        raise ValueError("claude çalıştırılamadı (kurulum/izin sorunu).") from None
     except ValueError:
         raise ValueError("Claude bağlantısı çalışmadı; anahtarı/token'ı kontrol et.") from None
     if sonuc.get("is_error"):

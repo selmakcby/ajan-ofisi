@@ -117,11 +117,13 @@ def komut_kur(ajan, genel_yasak, cikti_dizini, devam_session=None):
              "--verbose", "--add-dir", cikti_dizini]
     if devam_session:
         komut += ["--resume", devam_session]
-    if ajan.get("yalin"):
+    if ajan.get("yalin") or ortak.SUNUCU:
         # Yalın koşu: genel CLAUDE.md/rules/hafıza/MCP yüklenmez; ajan klasörü --add-dir ile okunur.
         # Küçük, sık koşan ajanlarda bağlamı (ve token'ı) belirgin biçimde azaltır.
-        komut += ["--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
-                  "--add-dir", ajan["cwd"]]
+        # Sunucuda da: ajanın yazabildiği .claude/settings*.json, .mcp.json yüklenmez (kendine yetki/hook veremez).
+        komut += ["--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands"]
+        if ajan.get("yalin"):
+            komut += ["--add-dir", ajan["cwd"]]
     izinli = ajan.get("izinli_araclar") or []
     if ortak.SUNUCU:
         izinli = ortak.sunucu_araclari(izinli)

@@ -1486,7 +1486,8 @@ def test_sunucu_araclari():
     assert sonuc[:2] == ["Read", "WebFetch"] or sonuc[0] == "Read"
     assert "Bash" not in sonuc and "Bash(rm -rf:*)" not in sonuc and "Bash(curl:*)" not in sonuc
     assert set(ortak.SUNUCU_BASH) <= set(sonuc) and len(sonuc) == len(set(sonuc))
-    assert ortak.sunucu_araclari(["Read", "Bash(git log:*)"]) == ["Read", "Bash(git log:*)"]
+    assert ortak.SUNUCU_BASH == ["Bash(ls:*)"]                       # kullanıcı kararı: sunucuda yalnız ls
+    assert ortak.sunucu_araclari(["Read", "Bash(git log:*)", "Bash(npm test:*)"]) == ["Read"]
 
 
 def test_sunucu_yasaklari():
@@ -1524,7 +1525,7 @@ def test_sunucu_komut_sudo():
         for d in ("HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
             assert d in k[4]
         izinli = k[k.index("--allowedTools") + 1:k.index("--disallowedTools")]
-        assert "Bash" not in izinli and "Bash(git status:*)" in izinli
+        assert "Bash" not in izinli and izinli[-1] == "Bash(ls:*)" and "Bash(git status:*)" not in izinli
         o = kosucu.ajan_ortami()
         assert o["HOME"] == os.path.join(ortak.VERI, "ev-ajan") and o["DISABLE_AUTOUPDATER"] == "1"
 
@@ -1542,6 +1543,97 @@ def test_claude_baglanti_hatasi_anlasilir():
     assert ortak.baglanti_hatasi_mi("OAuth token has expired")
     assert not ortak.baglanti_hatasi_mi("Kod incelendi, 3 risk var.")
     assert "Claude panelinden" in ortak.BAGLANTI_HATASI
+
+
+# ---------- Sunucu son gözden geçirme düzeltmeleri ----------
+
+def test_sunucu_proc_yasagi_mutlak_yol():  # C1: Claude Code'da mutlak yol //path
+    with _SunucuModu():
+        y = ortak.yasakli_araclar({})
+    assert "Read(//proc/**)" in y and "Read(/proc/**)" not in y
+    for kural in ("Edit(**/.claude/**)", "Edit(**/.mcp.json)", "Edit(**/.git/**)"):
+        assert kural in y, kural
+
+
+def test_sunucu_proje_ayarlari_yuklenmez():  # C2: ajan kendi .claude/settings, .mcp.json ile yetki/hook ekleyemesin
+    import kosucu
+    ajan = {"model": "sonnet", "cwd": ".", "izinli_araclar": ["Read", "Write"]}
+    with _SunucuModu():
+        k = kosucu.komut_kur(ajan, [], "cikti")
+        assert k[k.index("--setting-sources") + 1] == "" and "--strict-mcp-config" in k
+        k2 = kosucu.komut_kur({**ajan, "yalin": True}, [], "cikti")
+        assert k2.count("--setting-sources") == 1 and k2.count("--strict-mcp-config") == 1
+    assert "--setting-sources" not in kosucu.komut_kur(ajan, [], "cikti")  # yerelde bugünkü gibi
+
+
+def test_alan_adi_normallesir():  # I2
+    import sunucu
+    for giris in ("ofis.x.com", "https://ofis.x.com", "https://ofis.x.com/", "HTTP://Ofis.X.com:443/yol", " ofis.x.com. "):
+        assert sunucu.alan_adi_coz(giris) == "ofis.x.com", giris
+    assert sunucu.alan_adi_coz("") == ""
+
+
+def test_symlink_izin_yonlendirilemez(tmp):  # I3
+    gercek_rp, gercek_link, gercek_chmod = os.path.realpath, os.path.islink, os.chmod
+    hedef = os.path.join(tmp, "calisma", "kotu")
+    try:
+        os.path.realpath = lambda y: tmp if os.path.normpath(y) == os.path.normpath(hedef) else gercek_rp(y)
+        assert not ortak.calisma_icinde(hedef)                       # symlink VERI'nin kendisine gidiyor
+    finally:
+        os.path.realpath = gercek_rp
+    os.makedirs(hedef)
+    cagri = []
+    try:
+        os.path.islink = lambda y: True
+        os.chmod = lambda *a: cagri.append(a)
+        with _SunucuModu():
+            ortak.ajan_klasoru_ac(hedef)
+    finally:
+        os.path.islink, os.chmod = gercek_link, gercek_chmod
+    assert cagri == []                                              # symlink'e chmod yok
+
+
+def test_sunucuda_yarim_kosular_temizlenir(tmp):  # M2: konteyner yeniden başlayınca pid'ler yeniden kullanılır
+    ortak.durum_yaz("a", {"durum": "calisiyor", "pid": 1, "kosu_id": "k"})
+    ortak.durum_yaz("b", {"durum": "bitti"})
+    ortak.eski_kosulari_temizle()
+    assert ortak.durum_oku("a")["durum"] == "calisiyor"             # yerelde dokunulmaz (konsol pencereleri sürer)
+    with _SunucuModu():
+        ortak.eski_kosulari_temizle()
+    a = ortak.durum_oku("a")
+    assert a["durum"] == "hata" and a["pid"] is None and "yeniden" in a["hata"]
+    assert ortak.durum_oku("b")["durum"] == "bitti"
+
+
+def test_sse_tamponlanmaz(tmp):  # M3: nginx arkasında canlı akış
+    import http.client
+    s = _sunucu(tmp)
+    s.giris()
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", s.port, timeout=5)
+        c.request("GET", "/api/olaylar", headers={"Host": f"127.0.0.1:{s.port}", "Cookie": s.cerez})
+        r = c.getresponse()
+        assert r.getheader("X-Accel-Buffering") == "no"
+        c.close()
+    finally:
+        s.kapat()
+
+
+def test_baglanti_dene_oserror(tmp):  # M8
+    import subprocess as _sp
+    import claude_baglanti as cb
+    gercek_run, gercek_which = _sp.run, cb.shutil.which
+    def patla(*a, **k):
+        raise PermissionError(13, "izin yok")
+    try:
+        _sp.run = patla
+        cb.shutil.which = lambda ad: "/usr/bin/claude"
+        try:
+            cb.baglanti_dene(os.path.join(tmp, ".env")); raise AssertionError
+        except ValueError as e:
+            assert "çalıştırılamadı" in str(e)
+    finally:
+        _sp.run, cb.shutil.which = gercek_run, gercek_which
 
 
 # ---------- koşucu ----------

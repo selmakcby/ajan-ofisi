@@ -91,10 +91,13 @@ def yasakli_araclar(veri):
 
 
 # ---------- sunucu modu: kısıtlı ajanlar ----------
-# Serbest Bash yok: kandırılmış bir ajan anahtarı/dosyaları okuyup dışarı sızdıramasın. Yalnız güvenli kalıplar.
-SUNUCU_BASH = ["Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
-               "Bash(ls:*)", "Bash(npm test:*)", "Bash(pytest:*)", "Bash(python -m pytest:*)"]
-SUNUCU_YASAK = ["Bash(env:*)", "Bash(printenv:*)", "Read(/proc/**)"]  # süreç ortamından anahtar okunmasın
+# Serbest Bash yok: kandırılmış bir ajan anahtarı/dosyaları okuyup dışarı sızdıramasın. Kullanıcı kararı: yalnız ls
+# (git/test komutları ajanın kendi yazdığı kodu çalıştırabildiği için kapalı).
+SUNUCU_BASH = ["Bash(ls:*)"]
+# Claude Code izin kurallarında mutlak yol "//" ile yazılır. /proc: süreç ortamından anahtar okunmasın.
+# .claude/.mcp.json/.git: ajan kendi klasörüne ayar/hook/MCP yazıp kendine yetki veremesin.
+SUNUCU_YASAK = ["Bash(env:*)", "Bash(printenv:*)", "Read(//proc/**)",
+                "Edit(**/.claude/**)", "Edit(**/.mcp.json)", "Edit(**/.git/**)"]
 
 
 def sunucu_araclari(izinli):
@@ -109,15 +112,30 @@ def sunucu_araclari(izinli):
 
 
 def calisma_icinde(cwd):
-    kok = os.path.normcase(os.path.normpath(os.path.join(VERI, "calisma")))
-    return os.path.normcase(os.path.normpath(cwd)).startswith(kok + os.sep)
+    """Gerçek yol (symlink çözülmüş) VERI/calisma altında mı?"""
+    kok = os.path.normcase(os.path.realpath(os.path.join(VERI, "calisma")))
+    return os.path.normcase(os.path.realpath(cwd)).startswith(kok + os.sep)
 
 
 def ajan_klasoru_ac(yol):
     """Ajanın yazacağı klasör: sunucuda ayrı 'ajan' kullanıcısı da yazabilsin (grup ekip, setgid)."""
     os.makedirs(yol, exist_ok=True)
-    if SUNUCU:
+    # symlink ya da başkasının (ajan) açtığı klasör: izin değiştirme (symlink üzerinden ofis klasörü açılmasın)
+    if SUNUCU and not os.path.islink(yol) and (not hasattr(os, "getuid") or os.stat(yol).st_uid == os.getuid()):
         os.chmod(yol, 0o2770)
+
+
+def eski_kosulari_temizle():
+    """Sunucu (konteyner) yeniden başladıysa yarıda kalan koşular ölüdür; pid'ler yeniden kullanıldığı için
+    'çalışıyor' kaydı ajanı sonsuza dek meşgul gösterebilir. Yerelde dokunulmaz (konsol pencereleri sürer)."""
+    if not SUNUCU or not os.path.isdir(DURUM_DIZINI):
+        return
+    for ad in os.listdir(DURUM_DIZINI):
+        if not ad.endswith(".json") or not AJAN_ID_DESENI.match(ad[:-5]):
+            continue
+        d = durum_oku(ad[:-5])
+        if d and d.get("durum") in ("calisiyor", "basliyor"):
+            durum_yaz(ad[:-5], {**d, "durum": "hata", "pid": None, "hata": "sunucu yeniden başladı; koşu yarıda kaldı"})
 
 
 BAGLANTI_HATASI = "Claude bağlantısı kurulmadı ya da geçersiz: üstteki Claude panelinden bağla."

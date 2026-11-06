@@ -141,6 +141,11 @@ oturumları kaybolmaz. Aynı kod kullanıcının Windows bilgisayarında bugünk
   - Arayüzde (Ajanlar formu) sunucu modunda yetki açıklaması buna göre değişir ("Komut: yalnız git ve test
     komutları").
 
+- **Kullanıcı kararı (son gözden geçirme sonrası):** sunucuda "Komut çalıştırabilir" yalnız `Bash(ls:*)` verir; git
+  ve test komutları kapalı (ajanın kendi yazdığı kodu çalıştırıp anahtarı okuyabildiği gösterildi). Ek: `/proc` yasağı
+  `Read(//proc/**)` (Claude Code'da mutlak yol), `.claude/`, `.mcp.json`, `.git/` yazma yasağı ve sunucuda proje
+  ayarlarının yüklenmemesi (`--setting-sources ""`, `--strict-mcp-config`).
+
 ## İnşa edenin kararına bırakılanlar
 - Claude panelinin ve sihirbaz adımının görsel düzeni (mevcut stil).
 - Dockerfile katman sırası, `.dockerignore` içeriği.

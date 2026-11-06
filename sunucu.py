@@ -30,7 +30,14 @@ import ajan_yonetimi  # noqa: E402
 import claude_baglanti  # noqa: E402
 
 HOST = os.environ.get("OFIS_HOST", "127.0.0.1")  # Docker: 0.0.0.0 (port Compose'da 127.0.0.1'e açılır)
-ALAN_ADI = os.environ.get("OFIS_ALAN_ADI", "").strip().lower()  # ters vekil arkasındaki adres (ör. ofis.ornek.com)
+def alan_adi_coz(deger):
+    """'https://Ofis.X.com:443/yol' gibi yazımları 'ofis.x.com'a indirger (yanlış yazım tüm istekleri 403 yapmasın)."""
+    d = (deger or "").strip().lower()
+    d = re.sub(r"^[a-z]+://", "", d).split("/", 1)[0].split(":", 1)[0]
+    return d.rstrip(".")
+
+
+ALAN_ADI = alan_adi_coz(os.environ.get("OFIS_ALAN_ADI", ""))  # ters vekil arkasındaki adres (ör. ofis.ornek.com)
 KURULUM_KODU = None  # internete açıkken hesap yoksa açılışta üretilir, yalnız sunucu günlüğüne yazılır
 ILK_PORT = int(os.environ.get("OFIS_PORT", "8796"))
 TMUX_OTURUM = "ofis"
@@ -749,6 +756,7 @@ class Isleyici(SimpleHTTPRequestHandler):
     def _sse(self, sorgu):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("X-Accel-Buffering", "no")  # nginx arkasında canlı akış tamponlanmasın
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "keep-alive")
         self._cors()
@@ -835,6 +843,7 @@ def main():
     for d in (ortak.DURUM_DIZINI, ortak.KOSU_DIZINI, ortak.CIKTI_DIZINI, ortak.HAFIZA_DIZINI, ON_YUZ):
         os.makedirs(d, exist_ok=True)
     ortak.claude_md_tohumla()  # sunucuda CEO anayasası veri klasöründe düzenlenebilir
+    ortak.eski_kosulari_temizle()  # konteyner yeniden başladıysa yarıda kalan koşular
     global KURULUM_KODU
     if HOST != "127.0.0.1" and not hesap.hesap_var():
         KURULUM_KODU = f"{secrets.randbelow(10 ** 8):08d}"

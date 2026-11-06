@@ -70,11 +70,22 @@ docker compose logs ofis                             # ilk açılışta KURULUM 
   `CLAUDE.md` (sunucuda düzenlenebilir) ve Claude oturum kayıtları. Güncelleme: `git pull && docker compose up -d
   --build` (veri kalır). Yedek: `docker run --rm -v ajan-ofisi_ofis-veri:/veri -v "$PWD":/yedek alpine tar czf
   /yedek/ofis-yedek.tgz -C /veri .`
-- **Sunucuda ajanlar kısıtlı:** ajanların `claude` süreçleri ayrı bir kullanıcıyla (`ajan`) çalışır; hesap/oturum/ayar
-  dosyalarını (`/veri/gizli`) okuyamaz. "Komut çalıştırabilir" yetkisi sunucuda yalnız git, `ls` ve test komutlarını
-  verir; `env`, `printenv` ve `/proc` okumak yasaktır. Ajanlar yalnız `calisma/<ajan>` klasörlerinde çalışır. Amaç:
-  web'den okuduğu bir talimatla kandırılan bir ajan Claude anahtarını ya da hesabını ele geçiremesin.
+- **Sunucuda ajanlar kısıtlı.** Amaç: web'den okuduğu bir talimatla kandırılan bir ajan Claude anahtarını ya da
+  hesabını ele geçiremesin.
+  - Ajanların `claude` süreçleri ayrı bir kullanıcıyla (`ajan`) çalışır; hesap/oturum/ayar dosyalarını
+    (`/veri/gizli`) işletim sistemi düzeyinde okuyamaz.
+  - "Komut çalıştırabilir" yetkisi sunucuda **yalnız `ls`** verir (git ve test komutları, ajanın kendi yazdığı kodu
+    çalıştırabildiği için kapalı); `env`, `printenv` ve `/proc` okumak yasaktır.
+  - Ajanlar kendi klasörlerine Claude Code ayarı (`.claude/`), `.mcp.json` ya da git hook'u yazamaz; yazsalar da
+    sunucuda proje ayarları yüklenmez.
+  - Ajanlar yalnız `calisma/<ajan>` klasörlerinde çalışır.
+  - Bilmen gerekenler: Claude anahtarı ajanın `claude` sürecinin ortamında durur; okunması yukarıdaki araç yasaklarıyla
+    engellenir (Claude Code'un izin kurallarına dayanır). Ajanlar `gizli/` dışındaki ofis verilerini (ajan listesi,
+    çıktılar, hafıza, günlükler) okuyabilir ve birbirlerinin `calisma/` klasörüne yazabilir. Yanlış şifre/kod
+    beklemesi küresel olduğu için adresi bilen biri girişini birkaç dakika geciktirebilir (ele geçiremez).
 - **Şifre sıfırlama:** `docker compose exec ofis python sunucu.py --sifre-sifirla`
+- Yalnız Compose dosyasındaki **named volume** desteklenir (bind mount'ta klasör sahiplikleri kurulmaz; konteyner
+  açıklayıcı bir hatayla durur).
 - Sunucuda koşular pencere açmadan arka planda çalışır (ham çıktı `/veri/kosular/<id>.konsol.log`); terminal köprüsü
   (bilgisayarındaki Claude Code oturumlarını gösteren özellik) sunucuda kapalıdır.
 
