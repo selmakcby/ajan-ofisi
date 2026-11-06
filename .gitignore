@@ -16,6 +16,7 @@ port
 # sırlar
 .env
 .env.*
+!.env.example
 
 # python / sistem
 __pycache__/
