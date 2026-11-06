@@ -126,8 +126,9 @@ def test_rapor_derle():
 
 # ---------- Task 4: sunucu triyaj ve ofis durumu ----------
 
-def test_triyaj_guvenli_taraf():
+def test_triyaj_guvenli_taraf(tmp):
     import sunucu
+    _ajanlar(tmp)  # gerçek ajanlar.json'a bağlı kalmasın
     eski = sunucu.claude_json
     try:
         def bozuk(*a, **k):
