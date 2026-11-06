@@ -21,6 +21,7 @@ import ortak  # noqa: E402
 import kopru  # noqa: E402
 import token_sayac  # noqa: E402
 import sorular  # noqa: E402
+import akis  # noqa: E402
 
 HOST = "127.0.0.1"
 ILK_PORT = int(os.environ.get("OFIS_PORT", "8796"))
@@ -540,6 +541,9 @@ class Isleyici(SimpleHTTPRequestHandler):
         self.wfile.flush()
 
 
+IZLEYICI = akis.Izleyici(gorev_baslat, ceo_triyaj)
+
+
 def bos_port_ile_ac():
     for port in range(ILK_PORT, ILK_PORT + 20):
         try:
@@ -564,6 +568,7 @@ def main():
         f.write(str(port))
     print(f"Ajan Ofisi: http://{HOST}:{port}   (demo: http://{HOST}:{port}/?demo=1)", flush=True)
     KOPRU.baslat()
+    IZLEYICI.baslat()
     sunucu.serve_forever()
 
 
