@@ -1,6 +1,6 @@
 // Eğlence odası mantığı self-check: node test_eglence.mjs → OK (python test_ofis.py bunu da koşturur)
 import assert from 'node:assert/strict';
-import { geceMi, saatAl, yerAta, balonMetni, MIYAV, sonrakiBalon } from './on-yuz/eglence-mantik.js';
+import { geceMi, saatAl, yerAta, balonMetni, MIYAV, sonrakiBalon, yatakDizilimi, bilardoAdim, bilardoDurdu, dovusYeni, dovusAdim } from './on-yuz/eglence-mantik.js';
 
 // gece 20:00–07:59, gündüz 08:00–19:59
 assert.equal(geceMi(20), true); assert.equal(geceMi(23), true); assert.equal(geceMi(0), true); assert.equal(geceMi(7), true);
@@ -34,5 +34,48 @@ assert.equal(balonMetni(0), MIYAV[0]);
 assert.equal(balonMetni(.9999), MIYAV[MIYAV.length - 1]);
 const s = sonrakiBalon(.5);
 assert.ok(s >= 5 && s <= 14, 'balon aralığı ' + s);
+
+// her kediye ayrı yatak: dar odada iki sıra, yataklar çakışmaz
+const tek = yatakDizilimi(1, 10.4);
+assert.deepEqual(tek, [{ dx:0, dz:0 }]);
+const dort = yatakDizilimi(4, 10.4);                 // taban oda: sırada en çok 3 yatak
+assert.equal(dort.length, 4);
+assert.equal(new Set(dort.map(p => p.dz)).size, 2, 'dar odada iki sıra olmalı');
+const genis = yatakDizilimi(4, 15.2);
+assert.equal(new Set(genis.map(p => p.dz)).size, 1, 'geniş odada tek sıra');
+for (const liste of [dort, genis, yatakDizilimi(7, 15.2)]) {
+  for (let i = 0; i < liste.length; i++) for (let j = i + 1; j < liste.length; j++) {
+    const a = liste[i], b = liste[j];
+    assert.ok(Math.abs(a.dx - b.dx) >= 1.15 || Math.abs(a.dz - b.dz) >= 1.1, 'yataklar çakıştı');
+  }
+}
+
+// bilardo: sürtünme yavaşlatır, bant sektirir, toplar birbirinin içinden geçmez
+const masa = { w:2.5, d:1.3, r:.06 };
+let toplar = [{ x:0, z:0, vx:2, vz:0 }];
+for (let i = 0; i < 10; i++) toplar = bilardoAdim(toplar, 1 / 30, masa); // banda varmadan
+assert.ok(toplar[0].vx < 2 && toplar[0].vx > 0, 'sürtünme');
+toplar = [{ x:1.15, z:0, vx:3, vz:0 }];
+for (let i = 0; i < 10; i++) toplar = bilardoAdim(toplar, 1 / 60, masa);
+assert.ok(toplar[0].vx < 0 && toplar[0].x <= masa.w / 2 - masa.r + 1e-9, 'banttan sekmedi');
+toplar = [{ x:-.3, z:0, vx:2, vz:0 }, { x:.3, z:0, vx:0, vz:0 }];
+for (let i = 0; i < 40; i++) toplar = bilardoAdim(toplar, 1 / 60, masa);
+assert.ok(toplar[1].vx > .5, 'çarpışma hızı aktarmadı');
+assert.ok(Math.hypot(toplar[0].x - toplar[1].x, toplar[0].z - toplar[1].z) >= 2 * masa.r - 1e-6, 'toplar iç içe');
+for (let i = 0; i < 2000; i++) toplar = bilardoAdim(toplar, 1 / 60, masa);
+assert.ok(bilardoDurdu(toplar), 'toplar sonunda durmalı');
+
+// dövüş oyunu: canlar azalır, biri bitince K.O. ve yeni raunt
+let r = (() => { let s = 7; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
+let d = dovusYeni(r);
+assert.equal(d.can[0], 100); assert.equal(d.can[1], 100);
+let ko = false, yeni = false;
+for (let i = 0; i < 4000 && !yeni; i++) {
+  const once = d;
+  d = dovusAdim(d, 1 / 12, r);
+  if (d.ko) ko = true;
+  if (ko && d !== once && d.raunt > once.raunt) yeni = true;
+}
+assert.ok(ko && yeni, 'raunt bitmedi');
 
 console.log('OK');

@@ -904,7 +904,7 @@ function rafDizisi(g, x, zler, renk = '#4a4f53') {
 // hazır temalı odaların kendi eşyaları (taban oda 10.4×8.4'e göre; oda yoksa atlanır)
 const ARACLAR = { kutu, mat, aoLeke, tuvalDoku };
 const TEMA_DEKOR = {
-  _eglence:g => { EGLENCE.yerler = eglenceKur(g, EGLENCE, ARACLAR); },
+  _eglence:g => { Object.assign(EGLENCE, eglenceKur(g, EGLENCE, ARACLAR)); }, // yerler, tv, bilardo
   yazi:g => { bitki(g, 4.2, 2.6); raf(g, -3.6, -3.3, 2.0); kutu(g, 1.2, .9, .9, '#e5a089', 4.0, .55, -2.8, .2); },
   kod:g => bitki(g, -4.2, 2.6),
   tasarim:g => {
@@ -980,7 +980,7 @@ ODALAR.forEach(o => {
 // her odaya kedi yatağı: gece boştaki kediler masada değil burada uyur (oda kedi sayısına göre genişler)
 ODALAR.forEach(o => {
   const n = AJANLAR.filter(a => a.oda === o.id).length;
-  if (!o.eglence && n) o.yatak = yatakKur(o.grup, 0, o.d / 2 - 2.3, n, o.hali2, ARACLAR);
+  if (!o.eglence && n) o.yatak = yatakKur(o.grup, o, n, o.hali2, ARACLAR); // her kediye ayrı yatak + örtü
 });
 EGLENCE.yerler.push(...tasmaYerleri(Math.max(0, AJANLAR.length - EGLENCE.yerler.length)));
 
@@ -1225,7 +1225,7 @@ AJANLAR.forEach(a => {
   a.balonT = 2 + Math.random() * 8;
   const oda = odaBul(a.oda), y = oda.yatak?.[AJANLAR.filter(x => x.oda === a.oda).indexOf(a)];
   // kıvrılma pozu kökü kediye göre (-.62, .3, .84): kedinin merkezi yatak noktasına gelsin
-  if (y) a.yatakYeri = { anahtar:'yatak', pos:new THREE.Vector3(oda.cx + y.x + .62 * a.olcek, y.y - .2 * a.olcek, oda.cz + y.z - .84 * a.olcek), ry:0, durum:'uyuyor' };
+  if (y) a.yatakYeri = { anahtar:'yatak', pos:new THREE.Vector3(oda.cx + y.x + .62 * a.olcek, y.y - .2 * a.olcek, oda.cz + y.z - .84 * a.olcek), ry:0, durum:'uyuyor', ortu:y.ortu };
 });
 
 /* ---------- gündüz/gece: kim nerede (model çağrısı yok, 0 token) ---------- */
@@ -1244,6 +1244,11 @@ function kediHedefi(a) {
   if (y === undefined) return a.masaYeri;
   return a.eglenceYeri?.i === i ? a.eglenceYeri
     : (a.eglenceYeri = { i, anahtar:'eg:' + i, pos:new THREE.Vector3(EGLENCE.cx + y.x, y.y, EGLENCE.cz + y.z), ry:y.ry, durum:y.durum });
+}
+let tvZaman = 0;
+function eglenceGuncelle(t, dt) { // TV'de dövüş (saniyede 12 kare), masada yuvarlanan bilardo topları
+  if (t - tvZaman > 1 / 12) { EGLENCE.tv.ciz(t - tvZaman); tvZaman = t; }
+  EGLENCE.bilardo.adim(dt);
 }
 const aciFark = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 function kediYuru(a, t) {
@@ -2499,6 +2504,8 @@ function ajanAnimasyon(a, t, dt) {
   else if (a.yerHedef?.durum) kd = a.yerHedef.durum;     // eğlence odası: oynuyor/dinleniyor; yatak: uyuyor
   a.kedi.setDurum(kd);
   a.kedi.update(dt);
+  if (a.yatakYeri) a.yatakYeri.ortu.visible = a.yerAnahtar === 'yatak' && !a.yol && kd === 'uyuyor';
+  if (kd === 'bilardo' && a.kedi.vurdu()) EGLENCE.bilardo.vur();      // ıstaka beyaz topa değdi
   const k = a.kedi.group.position, sc = a.olcek;
   a.lamba.material.color.set(uyku ? '#b9ad9e' : '#ff7a59');
   a.zler.forEach((s, i) => {
@@ -2527,6 +2534,7 @@ function dongu() {
   const dt = Math.min(saat.getDelta(), .05), t = saat.elapsedTime;
   gecisGuncelle(dt);
   atamaGuncelle(t);
+  eglenceGuncelle(t, dt);
   AJANLAR.forEach(a => { kediYuru(a, t); ajanAnimasyon(a, t, dt); });
   zarfGuncelle(dt); akisGuncelle(dt); cekirdekGuncelle(t, dt); altAjanAnimasyon(t, dt);
   if (t - ledZaman > .16) { ledZaman = t; ledCiz(t); }

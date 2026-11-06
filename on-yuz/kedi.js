@@ -148,7 +148,14 @@ const ORTAK = {
   kirmizi: new THREE.MeshStandardMaterial({ color:'#d8433a', roughness:.55 }),
   altin: new THREE.MeshStandardMaterial({ color:'#e2b54a', roughness:.25, metalness:.85 }),
   kalkan: new THREE.MeshStandardMaterial({ color:'#4f6b5a', roughness:.4, metalness:.3 }),
+  joypad:new THREE.MeshStandardMaterial({ color:'#2f3440', roughness:.5 }),
+  istaka:new THREE.MeshStandardMaterial({ color:'#d9b98a', roughness:.55 }),
+  istakaUc:new THREE.MeshStandardMaterial({ color:'#5b7fd6', roughness:.6 }),
+  dugme:(() => { const m = new Map(); return r => m.get(r) || m.set(r, new THREE.MeshBasicMaterial({ color:r })).get(r); })(),
 };
+// PlayStation oynarken yüz ifadeleri: kaş çatma, şaşırma, şaşı, sırıtma, gözler kısık, bağırma
+const OYUN_YUZ = [{ kas:1, agiz:.25 }, { buyuk:1, bebek:1, agiz:.55 }, { sasi:1, agiz:.15 }, { mutlu:1, acik:0 },
+  { kapak:.75, kas:.7 }, { agiz:.95, buyuk:.5 }, { bakX:.8, kas:.5 }];
 
 /* ---------- pozlar: [px,py,pz, rx,ry,rz, sx,sy,sz] ---------- */
 const P = (p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1]) => [...p, ...r, ...s];
@@ -275,6 +282,7 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
   let dis = 'uyuyor'; // dışarıdan son gelen durum; 'bitti' her karede gelse de gerinme bir kez oynar
   function setDurum(yeni) {
     if (yeni === 'uyku' || yeni === 'bekliyor') yeni = 'uyuyor';
+    if (yeni === 'oynuyor') yeni = 'oyun';
     if (yeni === dis) return;
     dis = yeni;
     durum = yeni;
@@ -291,6 +299,23 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
   }
   const uyaniyor = () => uyanT >= 0 && t - uyanT < 1.1;
 
+  // eğlence odası araçları: oyun kolu ve ıstaka kökte durur (pozla birlikte gelir), yalnız ilgili durumda görünür
+  const joypad = new THREE.Group(); joypad.position.set(0, .4, .34); joypad.rotation.x = -.5; joypad.visible = false; kok.add(joypad);
+  mesh(joypad, GEO.kure, ORTAK.joypad, [0, 0, 0], [.13, .035, .07], false);
+  [-1, 1].forEach(s => mesh(joypad, GEO.kure, ORTAK.joypad, [s * .1, -.015, -.02], [.05, .04, .06], false));
+  [[-.05, '#ff7a59'], [.05, '#7fc8a9']].forEach(([x, r]) => mesh(joypad, GEO.kure, ORTAK.dugme(r), [x, .03, .01], [.016, .01, .016], false));
+  const istaka = new THREE.Group(); istaka.position.set(.07, .6, -.4); istaka.visible = false; kok.add(istaka);
+  const sopa = mesh(istaka, GEO.kure, ORTAK.istaka, [0, 0, .7], [.016, .016, .78], false);
+  mesh(istaka, GEO.kure, ORTAK.istakaUc, [0, 0, 1.47], [.017, .017, .03], false);
+  let vurduMu = false, sonFaz = 0;
+  const VURUS_SN = 4.5, VURUS_AN = .78;
+  function vurusOfset(f) { // nişan → geri çek → vur → bekle (istakanın ileri-geri konumu)
+    if (f < .55) return Math.sin(t * 3) * .025;
+    if (f < VURUS_AN - .03) return -.2 * (f - .55) / (VURUS_AN - .03 - .55);
+    if (f < VURUS_AN) return -.2 + .34 * (f - (VURUS_AN - .03)) / .03;
+    return .14 * (1 - (f - VURUS_AN) / (1 - VURUS_AN));
+  }
+
   function hedefPoz() {
     if (meme && !uyaniyor()) return memePoz;
     if (meme || durum !== 'uyuyor') return POZ.otur;
@@ -301,6 +326,8 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
     if (durum === 'uyuyor' && !meme) return { ...YUZ0, acik:0 };
     if (durum === 'bitti' || uyaniyor()) return { ...YUZ0, acik:0, mutlu:1 };
     if (durum === 'dusunuyor') return { ...YUZ0, bakY:.6, bakX:.3 };
+    if (durum === 'oyun') return { ...YUZ0, ...OYUN_YUZ[Math.floor(t / 1.1) % OYUN_YUZ.length] }; // ekrana göre şekilden şekle
+    if (durum === 'tavla') return { ...YUZ0, bakY:-.7 };
     return YUZ0;
   }
 
@@ -320,11 +347,12 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
     NODLAR.forEach(n => { const a = taban[n], b = hp[n]; for (let i = 0; i < 9; i++) a[i] += (b[i] - a[i]) * k; });
     const hy = hedefYuz();
     if (meme?.konus && !uyaniyor()) hy.agiz = .2 + Math.abs(Math.sin(t * 9)) * .55;
+    if (!meme && durum === 'sohbet' && Math.sin(t * .7) > -.2) hy.agiz = .15 + Math.abs(Math.sin(t * 8)) * .5;
     Object.keys(yuz).forEach(n => { yuz[n] += (hy[n] - yuz[n]) * Math.min(1, k * 1.6); });
 
     const uyur = durum === 'uyuyor' && !meme;
     const yaz = (!meme && durum === 'calisiyor') || (meme && meme.yaz && !uyaniyor());
-    const oyun = !meme && durum === 'oynuyor'; // eğlence odası: oyun kolu/ıstaka/zar — patiler hızlı ve küçük
+    const oyun = !meme && durum === 'oyun'; // eğlence odası: oyun kolu — patiler hızlı ve küçük
     const ek = {};
     if (uyur) {
       const n = Math.sin(t * 1.7);
@@ -340,7 +368,24 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
       ek.bas = { rx:Math.sin(t * 1.7) * .05, ry:Math.sin(t * .9) * .12 };
     } else if (!meme && durum === 'dinleniyor') {
       ek.bas = { ry:Math.sin(t * .6) * .35, rx:Math.sin(t * .8) * .05 }; // etrafa bakınır
+    } else if (!meme && durum === 'sohbet') { // el sallayarak anlatır, karşısındaki başını sallar
+      const anlatiyor = Math.sin(t * .7) > -.2;
+      ek.onR = { rx:-1.1 + Math.sin(t * 5.5) * (anlatiyor ? .45 : .08), rz:-.3 + Math.sin(t * 2.9) * (anlatiyor ? .35 : .05) };
+      ek.onL = { rx:-.4 + Math.sin(t * 4.1 + 1) * (anlatiyor ? .25 : .05) };
+      ek.bas = { rx:Math.sin(t * (anlatiyor ? 3.2 : 1.6)) * .08, rz:Math.sin(t * .9) * .1 };
+    } else if (!meme && durum === 'tavla') { // arada zar atar
+      const z = (t % 3.2) / 3.2, e = z > .82 ? Math.sin((z - .82) / .18 * Math.PI) : 0;
+      ek.onR = { rx:-.5 - 1.1 * e, rz:-.2 * e }; ek.bas = { rx:.12 };
+    } else if (!meme && durum === 'bilardo') { // nişan al, geri çek, vur
+      const f = (t % VURUS_SN) / VURUS_SN, o = vurusOfset(f);
+      if (sonFaz < VURUS_AN && f >= VURUS_AN) vurduMu = true;
+      sonFaz = f;
+      istaka.position.z = -.4 + o;
+      ek.onR = { rx:-1.25 + o * 2.2 }; ek.onL = { rx:-1.35 + o * .6 };
+      ek.govde = { rx:.18 }; ek.bas = { rx:.15, ry:-.05 };
     }
+    joypad.visible = oyun;
+    istaka.visible = !meme && durum === 'bilardo';
     if (!uyur) { ek.k4 = { rz:Math.sin(t * 3.1) * .3 }; ek.k5 = { rz:Math.sin(t * 3.1 - .6) * .45 }; }
     const bitiyor = durum === 'bitti' && bittiT >= 0 && !meme;
     if (bitiyor || uyaniyor()) {
@@ -396,7 +441,9 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
   }
 
   update(0);
-  return { group, dugum, setDurum, setMeme, setKontur, update, get durum() { return durum; }, desen };
+  // bilardo: vuruş anı bir kez bildirilir (top o an yola çıkar)
+  const vurdu = () => { const v = vurduMu; vurduMu = false; return v; };
+  return { group, dugum, setDurum, setMeme, setKontur, update, vurdu, get durum() { return durum; }, desen };
 }
 
 /* ---------- takım → desen eşlemesi ---------- */

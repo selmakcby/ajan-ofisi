@@ -2,21 +2,58 @@
 // eglenceKur: PlayStation'lı TV, kanepe, armut koltuk, bilardo, iki tavla, çay-kahve köşesi, koltuklar.
 // Döndürdüğü "yer"ler kedilerin gündüz oturduğu noktalardır (oda grubuna göre yerel).
 import * as THREE from 'three';
+import { yatakDizilimi, bilardoAdim, bilardoDurdu, dovusYeni, dovusAdim } from './eglence-mantik.js';
 
 const PI = Math.PI;
 const yon = (x, z, hx, hz) => Math.atan2(hx - x, hz - z); // kedi +z'ye bakar; (hx,hz)'ye dönmesi için ry
 
-function tvDoku(tuvalDoku) {
-  const { ctx, t } = tuvalDoku(256, 144);
-  const g = ctx.createLinearGradient(0, 0, 0, 144);
-  g.addColorStop(0, '#5b7fd6'); g.addColorStop(1, '#9fd8b0');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 144);
-  ctx.fillStyle = '#7a5c3a'; ctx.fillRect(0, 108, 256, 36);                // yol
-  ctx.fillStyle = '#ff7a59'; ctx.fillRect(60, 84, 34, 22);                  // araba 1
-  ctx.fillStyle = '#f2c14e'; ctx.fillRect(150, 90, 34, 18);                 // araba 2
-  ctx.fillStyle = '#fff'; ctx.font = '600 18px Inter'; ctx.fillText('P1  03:12  P2', 70, 26);
-  t.needsUpdate = true; return t;
+// TV'de dövüş oyunu: rastgele sahne, iki dövüşçü, can barları, K.O. (dovusAdim saf mantıkta)
+const SAHNE = [['#2a1b3d', '#ff7a59', '#45325f'], ['#5b7fd6', '#f6c35c', '#8a98d8'], ['#1d3b4a', '#6cc3c8', '#2f5f6e'], ['#3b2a20', '#e9805f', '#6b4a33']];
+const DOVUSCU = ['#ff7a59', '#7fc8a9', '#f2c14e', '#b49be6', '#6cc3c8', '#ef8fa2'];
+function dovusCiz(ctx, d, zaman) {
+  const [gok, gunes, yer] = SAHNE[d.sahne];
+  ctx.fillStyle = gok; ctx.fillRect(0, 0, 256, 144);
+  ctx.fillStyle = gunes; ctx.beginPath(); ctx.arc(200, 46, 18, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = yer; ctx.fillRect(0, 110, 256, 34);
+  ctx.fillStyle = 'rgba(255,255,255,.12)'; for (let i = 0; i < 6; i++) ctx.fillRect(i * 48 - (zaman * 20 % 48), 112, 26, 3);
+  // can barları
+  [0, 1].forEach(i => {
+    const x = i ? 140 : 12, w = 104;
+    ctx.fillStyle = '#2b2724'; ctx.fillRect(x, 10, w, 9);
+    ctx.fillStyle = d.can[i] > 30 ? '#f6c35c' : '#ff5a4a';
+    const c = w * d.can[i] / 100; ctx.fillRect(i ? x + w - c : x, 11, c, 7);
+  });
+  ctx.fillStyle = '#fff'; ctx.font = '700 9px Inter'; ctx.fillText('P1', 12, 30); ctx.fillText('P2', 232, 30);
+  ctx.fillText('R' + d.raunt, 122, 18);
+  // dövüşçüler
+  [0, 1].forEach(i => {
+    const yon = i ? -1 : 1, a = d.aksiyon[i], x = d.x[i] * 256, zipla = a === 'zipla' ? 14 : 0;
+    const sallan = Math.sin(zaman * 8 + i) * 1.5, y = 106 - zipla + (a === 'bekle' ? sallan : 0);
+    ctx.strokeStyle = DOVUSCU[d.renk[i]]; ctx.fillStyle = DOVUSCU[d.renk[i]]; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y - 44, 7, 0, Math.PI * 2); ctx.fill();                       // baş
+    ctx.beginPath(); ctx.moveTo(x, y - 36); ctx.lineTo(x, y - 16); ctx.stroke();               // gövde
+    const kol = a === 'yumruk' ? [x + yon * 24, y - 32] : a === 'blok' ? [x + yon * 8, y - 44] : [x + yon * 10, y - 24];
+    ctx.beginPath(); ctx.moveTo(x, y - 32); ctx.lineTo(...kol); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y - 32); ctx.lineTo(x - yon * 8, y - 22); ctx.stroke();
+    const bacak = a === 'tekme' ? [x + yon * 26, y - 20] : [x + yon * 8, y];
+    ctx.beginPath(); ctx.moveTo(x, y - 16); ctx.lineTo(...bacak); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y - 16); ctx.lineTo(x - yon * 7, y); ctx.stroke();
+    if (d.ko && d.kazanan !== i) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x - 14, y - 54, 28, 56); }
+  });
+  if (d.vurus >= 0) { // vuruş kıvılcımı
+    const x = d.x[d.vurus] * 256, y = 70;
+    ctx.fillStyle = '#fff6b0';
+    ctx.beginPath(); for (let k = 0; k < 10; k++) { const r = k % 2 ? 6 : 15, a = k * Math.PI / 5; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } ctx.fill();
+  }
+  if (d.ko) { ctx.fillStyle = '#ff5a4a'; ctx.font = '900 34px "Space Grotesk", Inter'; ctx.textAlign = 'center'; ctx.fillText('K.O.!', 128, 80); ctx.textAlign = 'left'; }
 }
+export function tvKur(tuvalDoku) {
+  const doku = tuvalDoku(256, 144);
+  let d = dovusYeni(), zaman = 0;
+  dovusCiz(doku.ctx, d, 0); doku.t.needsUpdate = true;
+  return { doku:doku.t, ciz(dt) { zaman += dt; d = dovusAdim(d, dt); dovusCiz(doku.ctx, d, zaman); doku.t.needsUpdate = true; } };
+}
+
 function tavlaDoku(tuvalDoku) {
   const { ctx, t } = tuvalDoku(256, 192);
   ctx.fillStyle = '#7a4e2d'; ctx.fillRect(0, 0, 256, 192);
@@ -50,7 +87,8 @@ export function eglenceKur(g, oda, { kutu, mat, aoLeke, tuvalDoku }) {
   // TV + PlayStation (arka duvar, sol)
   kutu(g, 3.0, .5, .55, '#8d8276', -3.4, .37, -4.42, .05);                          // TV ünitesi
   kutu(g, 2.5, 1.45, .1, '#2b2724', -3.4, 1.62, -4.66, .03);                       // TV kasası
-  const tv = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.3), new THREE.MeshBasicMaterial({ map:tvDoku(tuvalDoku), toneMapped:false }));
+  const ekran = tvKur(tuvalDoku);
+  const tv = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 1.3), new THREE.MeshBasicMaterial({ map:ekran.doku, toneMapped:false }));
   tv.position.set(-3.4, 1.62, -4.6); g.add(tv);
   kutu(g, .12, .48, .4, '#f4f2ee', -2.25, .86, -4.42, .03);                        // PlayStation (dik)
   kutu(g, .13, .06, .41, '#2b2724', -2.25, .86, -4.42, .01, false);                // siyah orta şerit
@@ -63,10 +101,10 @@ export function eglenceKur(g, oda, { kutu, mat, aoLeke, tuvalDoku }) {
   [-5.1, -1.7].forEach(x => kutu(g, .28, .6, 1.05, '#5f76a8', x, .55, -1.35, .1));  // kolçaklar
   [-4.45, -3.4, -2.35].forEach(x => {
     kutu(g, .95, .12, .85, '#8aa0cc', x, .62, -1.4, .06);                           // minderler
-    yer(x, -1.45, .68, PI, 'oynuyor', 'oyun');
+    yer(x, -1.45, .68, PI, 'oyun', 'oyun');
   });
   kure(.62, '#f2876b', -6.0, .45, -2.3, 1.05, .62, 1.05);                          // armut koltuk
-  yer(-6.0, -2.3, .72, yon(-6.0, -2.3, -3.4, -4.6), 'oynuyor', 'oyun');
+  yer(-6.0, -2.3, .72, yon(-6.0, -2.3, -3.4, -4.6), 'oyun', 'oyun');
   aoLeke(g, 4.6, 1.8, -3.4, -1.3, .118, .8);
 
   // bilardo masası (sağ arka)
@@ -74,15 +112,32 @@ export function eglenceKur(g, oda, { kutu, mat, aoLeke, tuvalDoku }) {
   [[-1.2, -.62], [1.2, -.62], [-1.2, .62], [1.2, .62]].forEach(([dx, dz]) => kutu(g, .18, .78, .18, '#5a3d2a', BX + dx, .5, BZ + dz, .04));
   kutu(g, 2.9, .24, 1.62, '#6b4a33', BX, .96, BZ, .06);
   kutu(g, 2.56, .04, 1.3, '#2f7d55', BX, 1.09, BZ, .015, false);
-  [['#f4f2ee', -.7, .1], ['#f2c14e', .5, -.2], ['#c95c45', .62, .05], ['#3f7fb5', .74, -.08], ['#2b2724', .86, .14], ['#7a5cc4', .5, .25]]
-    .forEach(([r, dx, dz]) => kure(.06, r, BX + dx, 1.17, BZ + dz));
-  const istaka = kutu(g, 1.9, .035, .035, '#d9b98a', BX - .9, 1.18, BZ + .2, .015);
-  istaka.rotation.y = .12;
+  const DIZILIM = [[-.5, 0], [.45, 0], [.56, -.065], [.56, .065], [.67, -.13], [.67, 0], [.67, .13]];
+  const RENK = ['#f4f2ee', '#f2c14e', '#c95c45', '#3f7fb5', '#2b2724', '#7a5cc4', '#ff7a59'];
+  const masa = { w:2.5, d:1.3, r:.06 };
+  let toplar = DIZILIM.map(([x, z], i) => ({ x, z, vx:0, vz:0, mesh:kure(.06, RENK[i], BX + x, 1.17, BZ + z) }));
+  let vurusSay = 0;
+  const bilardo = {
+    adim(dt) {
+      if (bilardoDurdu(toplar)) return;
+      const yeni = bilardoAdim(toplar, dt, masa);
+      toplar = yeni.map((b, i) => ({ ...b, mesh:toplar[i].mesh }));
+      toplar.forEach(b => { b.mesh.position.x = BX + b.x; b.mesh.position.z = BZ + b.z; b.mesh.rotation.z -= b.vx * dt / .06; b.mesh.rotation.x += b.vz * dt / .06; });
+    },
+    vur() { // ıstakadaki kedi vurdu: beyaz top hattına döner, hedefe doğru gider; birkaç vuruşta bir toplar dizilir
+      if (!bilardoDurdu(toplar)) return;
+      if (++vurusSay % 6 === 0) toplar.forEach((b, i) => { [b.x, b.z] = DIZILIM[i]; });
+      const b = toplar[0]; b.x = -.5; b.z = 0;
+      const aci = (Math.random() - .5) * .35, hiz = 2.2 + Math.random() * 1.2;
+      b.vx = Math.cos(aci) * hiz; b.vz = Math.sin(aci) * hiz;
+    },
+  };
   [6.55, 6.7].forEach((x, i) => { const s = kutu(g, .035, 1.7, .035, '#d9b98a', x, .95, -4.55 + i * .12, .015); s.rotation.z = -.12; });
   kutu(g, 1.3, .06, .5, '#fff1cf', BX, 2.45, BZ, .03, false);                      // masa lambası
   kutu(g, .02, .5, .02, '#8d8276', BX, 2.72, BZ, .01, false);
   aoLeke(g, 3.6, 2.4, BX, BZ, .118, .8);
-  yer(BX - 1.75, BZ, .12, PI / 2, 'oynuyor', 'bilardo');
+  silindir(.3, .26, .08, '#c9bfb1', BX - 1.75, .51, BZ); silindir(.05, .05, .42, '#8d8276', BX - 1.75, .28, BZ); // tabure
+  yer(BX - 1.75, BZ, .55, PI / 2, 'bilardo', 'bilardo');
   yer(BX + 1.75, BZ, .12, -PI / 2, 'dinleniyor', 'bilardo');
   yer(BX, BZ + 1.3, .12, PI, 'dinleniyor', 'bilardo');
 
@@ -98,7 +153,7 @@ export function eglenceKur(g, oda, { kutu, mat, aoLeke, tuvalDoku }) {
       .forEach(([dx, dz, r]) => silindir(.045, .045, .025, r, TX + dx, .56, TZ + dz, 14));
     [[-.95, PI / 2], [.95, -PI / 2]].forEach(([dx, ry]) => {
       kutu(g, .62, .18, .62, '#f5a463', TX + dx, .2, TZ, .08);
-      yer(TX + dx, TZ, .3, ry, 'oynuyor', 'tavla');
+      yer(TX + dx, TZ, .3, ry, 'tavla', 'tavla');
     });
     aoLeke(g, 2.8, 1.4, TX, TZ, .118, .7);
   });
@@ -120,7 +175,7 @@ export function eglenceKur(g, oda, { kutu, mat, aoLeke, tuvalDoku }) {
   [[1.25, PI / 2 + .5], [3.25, -PI / 2 - .5]].forEach(([x, ry]) => {
     const k = new THREE.Group(); k.position.set(x, 0, 2.35); k.rotation.y = ry; g.add(k);
     kutu(k, .95, .4, .9, '#7fc8a9', 0, .33, 0, .1); kutu(k, .95, .6, .22, '#6cb497', 0, .65, -.36, .08);
-    yer(x, 2.35, .53, ry, 'dinleniyor', 'sohbet');
+    yer(x, 2.35, .53, ry, 'sohbet', 'sohbet');
   });
   silindir(.38, .32, .06, '#e9e1d4', 2.25, .5, 2.35); silindir(.05, .05, .4, '#c9bfb1', 2.25, .28, 2.35);
   [2.15, 2.35].forEach(x => silindir(.045, .035, .11, mat('#c95c45', { transparent:true, opacity:.85 }), x, .58, 2.35, 12));
@@ -133,7 +188,7 @@ export function eglenceKur(g, oda, { kutu, mat, aoLeke, tuvalDoku }) {
       const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), y); m.position.set(x + dx, yy, z + dz); m.castShadow = true; g.add(m);
     });
   });
-  return yerler;
+  return { yerler, tv:ekran, bilardo };
 }
 
 // Fazla kedi için ortadaki boş şeritte yere oturma noktaları
@@ -146,15 +201,33 @@ export function tasmaYerleri(n) {
   return yerler;
 }
 
-// Kedi yatağı: n kedi yan yana kıvrılır. Döndürülen noktalar kıvrılmış kedinin merkezi (oda grubuna göre yerel).
-export function yatakKur(g, x, z, n, renk, { kutu }) {
-  const W = Math.max(1.3, .5 + .72 * n), D = 1.05;
-  kutu(g, W, .14, D, '#f3e3cf', x, .19, z, .06);                                    // minder
-  kutu(g, W + .16, .16, .14, renk, x, .25, z - D / 2, .06);                          // kenarlar
-  kutu(g, W + .16, .12, .14, renk, x, .23, z + D / 2, .06);
-  [-1, 1].forEach(s => kutu(g, .14, .16, D, renk, x + s * W / 2, .25, z, .06));
-  kutu(g, .5, .1, .3, '#fff8ee', x - W / 2 + .4, .31, z - .25, .05);                // yastık
-  return Array.from({ length:n }, (_, i) => ({ x:x - W / 2 + .5 + i * .72 + .1, z:z + .05, y:.27 }));
+// Örtü dokusu: renkli kareli battaniye (renk başına bir kez)
+const ORTU = new Map();
+function ortuDoku(renk, tuvalDoku) {
+  if (ORTU.has(renk)) return ORTU.get(renk);
+  const { ctx, t } = tuvalDoku(128, 128);
+  ctx.fillStyle = '#fff5e8'; ctx.fillRect(0, 0, 128, 128);
+  ctx.fillStyle = renk; ctx.globalAlpha = .85;
+  for (let i = 0; i < 4; i++) { ctx.fillRect(i * 32 + 6, 0, 14, 128); ctx.fillRect(0, i * 32 + 6, 128, 14); }
+  ctx.globalAlpha = 1; t.needsUpdate = true; ORTU.set(renk, t); return t;
+}
+// Her kediye ayrı yatak (dar odada arka arkaya sıralar) ve uyurken üstüne örtülen battaniye.
+// Döndürülen noktalar kıvrılmış kedinin merkezi (oda grubuna göre yerel) + o yatağın örtüsü.
+export function yatakKur(g, oda, n, renk, { kutu, mat, tuvalDoku }) {
+  const W = .95, D = .9, z0 = oda.d / 2 - 2.3;
+  const ortuMat = new THREE.MeshStandardMaterial({ map:ortuDoku(renk, tuvalDoku), roughness:.95 });
+  return yatakDizilimi(n, oda.w).map(({ dx, dz }) => {
+    const x = dx, z = z0 + dz;
+    kutu(g, W, .14, D, '#f3e3cf', x, .19, z, .06);                                  // minder
+    kutu(g, W + .14, .16, .12, renk, x, .25, z - D / 2, .05);                        // kenarlar
+    kutu(g, W + .14, .1, .12, renk, x, .22, z + D / 2, .05);
+    [-1, 1].forEach(s => kutu(g, .12, .16, D, renk, x + s * W / 2, .25, z, .05));
+    kutu(g, .42, .09, .26, '#fff8ee', x - .2, .3, z - .26, .05);                    // yastık
+    const ortu = new THREE.Mesh(new THREE.SphereGeometry(.5, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), ortuMat);
+    // gövdeyi saran kubbe; baş önde dışarıda kalsın diye biraz geride
+    ortu.scale.set(.9, 1.1, .72); ortu.position.set(x - .02, .26, z - .06); ortu.castShadow = true; ortu.visible = false; g.add(ortu);
+    return { x, z, y:.27, ortu };
+  });
 }
 
 // "Miyaw" balonu: her söz için bir kez çizilen doku
