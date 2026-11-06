@@ -81,6 +81,43 @@ def test_soru_temizle():
     assert kosucu.soru_temizle('Plan hazır.\n<soru tur="diger">Uygun mu?</soru>') == "Plan hazır."
 
 
+# ---------- Task 3: sorular.py kalıcı durum ----------
+
+def test_soru_kaydi():
+    import sorular
+    sid = sorular.soru_ekle("yazar", "k1", "s1", "Uygun mu?", "diger")
+    assert sid == "k1" and sorular.soru_al("k1")["durum"] == "yeni"
+    sorular.soru_guncelle(sid, durum="kullanicida")
+    assert [s["soru_id"] for s in sorular.bekleyen_sorular()] == ["k1"]
+    assert sorular.otomatik_artir("s1") == 1 and sorular.otomatik_artir("s1") == 2
+    sorular.otomatik_sifirla("s1")
+    assert sorular.otomatik_sayi("s1") == 0
+
+
+def test_mesaj_esleme_sinir():
+    import sorular
+    for i in range(510):
+        sorular.mesaj_esle(i, {"tip": "ceo", "cevap": str(i)})
+    assert sorular.mesaj_hedefi(5) is None and sorular.mesaj_hedefi(509)["cevap"] == "509"
+
+
+def test_devam_kuyrugu():
+    import sorular
+    sorular.devam_birak("yazar", {"a": 1})
+    sorular.devam_birak("yazar", {"a": 2})
+    assert sorular.devam_al("yazar") == {"a": 2} and sorular.devam_al("yazar") is None
+
+
+def test_rapor_derle():
+    import sorular
+    assert sorular.rapor_derle() == (None, [])
+    sorular.karar_ekle({"ajan": "yazar", "soru": "S", "cevap": "C", "gerekce": "G", "kosu_id": "k", "session_id": "s"})
+    metin, maddeler = sorular.rapor_derle()
+    assert metin.startswith("1. yazar: S → C") and maddeler == [{"ajan": "yazar", "session_id": "s", "kosu_id": "k"}]
+    sorular.rapor_isaretle(ortak.simdi_iso())
+    assert sorular.rapor_derle() == (None, [])
+
+
 # ---------- koşucu ----------
 
 def main():
