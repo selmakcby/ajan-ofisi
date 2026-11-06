@@ -194,6 +194,20 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 .form-a .dugmeler-a{display:flex;gap:10px;margin-top:20px}
 .form-a .ipucu{font-size:12px;color:var(--soluk);margin-top:4px}
 .sayfa h2.ara-baslik{margin-top:28px}
+/* Projeler / Sorular */
+.soru-rozet{display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:9px;background:var(--mercan);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.durum-rozet{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(59,52,44,.08);color:var(--soluk)}
+.durum-rozet.acik{background:#ddf2e2;color:#2f7a4a}.durum-rozet.onay_bekliyor{background:#fde4cc;color:#a1561f}.durum-rozet.kapali{background:#ece7e0}
+.durum-rozet.maliyet,.durum-rozet.yayin-mail-para,.durum-rozet.buyuk-degisiklik{background:#fbdde3;color:#a1402a}
+.ilerleme{height:7px;border-radius:4px;background:rgba(59,52,44,.08);overflow:hidden;margin:8px 0 4px}
+.ilerleme i{display:block;height:100%;background:var(--mercan);border-radius:4px}
+.proje-kart .gorevler,.proje-kart .notlar{font-size:12.5px;color:#5d5348;margin-top:6px}
+.proje-kart .notlar{color:var(--soluk);font-style:italic}
+.proje-kart textarea,.soru-kart textarea{width:100%;margin-top:8px;padding:7px 9px;border-radius:9px;border:1px solid rgba(59,52,44,.15);font:inherit;font-size:13px;min-height:52px;resize:vertical;background:#fff}
+.soru-kart .sure{font-size:11.5px;color:var(--soluk);margin-top:4px}
+.soru-kart p{-webkit-line-clamp:unset!important;display:block!important}
+.saat-satir{display:flex;gap:10px;align-items:center;margin:0 0 16px;font-size:13px}
+.saat-satir input{padding:6px 8px;border-radius:9px;border:1px solid rgba(59,52,44,.15);font:inherit}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--soluk);font-weight:600;padding:8px 10px;border-bottom:1px solid rgba(59,52,44,.12)}
 td{padding:9px 10px;border-bottom:1px solid rgba(59,52,44,.06);font-variant-numeric:tabular-nums}
@@ -277,6 +291,8 @@ td.sayi,th.sayi{text-align:right}
     <button data-sekme="ajanlar">Ajanlar</button>
     <button data-sekme="hafiza">Hafıza</button>
     <button data-sekme="maliyet">Maliyet</button>
+    <button data-sekme="projeler">Projeler</button>
+    <button data-sekme="sorular">Sorular <b id="soruRozet" class="soru-rozet" hidden></b></button>
   </nav>
   <div class="bosluk"></div>
   <div class="hap"><span class="nokta" id="aktifNokta"></span><b id="aktif">0</b> ajan çalışıyor</div>
@@ -1632,7 +1648,7 @@ function olayIsle(o) {
         ajanBitir(a, o); SES.bitti(); isikAkit(a.oda, true, hafiza.length ? '#e0a53a' : '#ff7a59');
         if (hafiza.length) setTimeout(() => { cekirdekParla(1.4); SES.hafiza(); }, 1300);
       } else if (a && o.ozet) a.sonOzet = temizMetin(o.ozet).slice(0, 120);
-      sayacTazele();
+      sayacTazele(); if (!tekrar) sorularRozetTazele();
     },
     ceo_basladi() {
       if (tekrar || !a) return;
@@ -2101,7 +2117,8 @@ async function sekmeAc(ad) {
   document.querySelectorAll('#sekmeler button').forEach(b => b.classList.toggle('secili', b.dataset.sekme === ad));
   if (ad === 'ofis') { sayfa.classList.remove('acik'); return; }
   panelKapat();
-  const icerik = ad === 'odalar' ? odalarSayfasi() : ad === 'ajanlar' ? await ajanlarSayfasi() : ad === 'hafiza' ? await hafizaSayfasi() : maliyetSayfasi();
+  const icerik = ad === 'odalar' ? odalarSayfasi() : ad === 'ajanlar' ? await ajanlarSayfasi() : ad === 'hafiza' ? await hafizaSayfasi()
+    : ad === 'projeler' ? await projelerSayfasi() : ad === 'sorular' ? await sorularSayfasi() : maliyetSayfasi();
   if (aktifSekme !== ad) return;
   sayfa.replaceChildren(...icerik); sayfa.classList.add('acik');
 }
@@ -2328,6 +2345,148 @@ async function hafizaSayfasi() {
   const toplam = liste.reduce((t, h) => t + (h.madde_sayisi || 0), 0);
   return [el('h2', null, 'Hafıza'), el('p', 'alt', 'Her ajanın kalıcı hafızası: senin tercih ve revizelerin. Ajan işi bir kez öğrenir, koşu sonunda yeni madde ekler. Toplam ' + toplam + ' madde, son güncellenen önde.'), iz];
 }
+/* ---------- Projeler: kullanıcı ekler, CEO toplantılarda görevlere böler ---------- */
+const ONCELIK_ADI = { dusuk:'düşük', orta:'orta', yuksek:'yüksek' };
+const PROJE_DURUM_ADI = { acik:'açık', onay_bekliyor:'onay bekliyor', kapali:'kapandı' };
+const GOREV_ISARET = { bekliyor:'○', yapiliyor:'◐', bitti:'●', iptal:'✕' };
+async function projeIslem(govde, basarili) {
+  const { durum, veri } = await postJSON('/api/projeler', govde);
+  if (durum !== 200) { tost(veri.hata || 'İşlem yapılamadı.'); return false; }
+  if (veri.mesaj) tost(veri.mesaj); else if (basarili) tost(basarili);
+  sekmeAc('projeler'); sorularRozetTazele();
+  return true;
+}
+function projeFormu() {
+  const f = el('div', 'form-a kart');
+  const baslik = el('input'); baslik.type = 'text'; baslik.maxLength = 120; baslik.placeholder = 'ör. Web sitesi yenileme';
+  const aciklama = el('textarea'); aciklama.maxLength = 4000; aciklama.placeholder = 'Ne istiyorsun? CEO bunu okuyup görevlere böler.';
+  const oncelik = el('select'); Object.entries(ONCELIK_ADI).forEach(([k, a]) => { const o = el('option', null, a); o.value = k; oncelik.append(o); }); oncelik.value = 'orta';
+  const tarih = el('input'); tarih.type = 'date';
+  const kaydet = el('button', 'koyu', 'Projeyi ekle');
+  kaydet.onclick = async () => {
+    if (!baslik.value.trim()) return tost('Başlık boş olamaz.');
+    kaydet.disabled = true;
+    const ok = await projeIslem({ islem:'ekle', baslik:baslik.value.trim(), aciklama:aciklama.value.trim(), oncelik:oncelik.value, hedef_tarih:tarih.value || null }, 'Proje eklendi; sıradaki toplantıda CEO ele alacak.');
+    if (!ok) kaydet.disabled = false;
+  };
+  const satir = el('div', 'saat-satir'); satir.append(el('span', null, 'Öncelik'), oncelik, el('span', null, 'Hedef tarih (isteğe bağlı)'), tarih);
+  f.append(el('label', null, 'Başlık'), baslik, el('label', null, 'Açıklama'), aciklama, satir, kaydet);
+  return f;
+}
+function projeKarti(p) {
+  const k = el('div', 'kart proje-kart');
+  const ust = el('div', 'ust'); ust.append(el('span', 'durum-rozet ' + p.durum, PROJE_DURUM_ADI[p.durum] || p.durum), document.createTextNode(' öncelik ' + (ONCELIK_ADI[p.oncelik] || p.oncelik) + (p.hedef_tarih ? ' · hedef ' + p.hedef_tarih : '')));
+  const bar = el('div', 'ilerleme'); const dol = el('i'); dol.style.width = Math.max(0, Math.min(100, Number(p.ilerleme) || 0)) + '%'; bar.append(dol);
+  k.append(ust, el('h4', null, p.baslik), bar, el('div', 'oda-adi', '%' + (p.ilerleme || 0) + ' tamam'));
+  if (p.aciklama) k.append(el('p', null, p.aciklama));
+  const gorevler = el('div', 'gorevler');
+  (p.gorevler || []).forEach(g => gorevler.append(el('div', null, (GOREV_ISARET[g.durum] || '○') + ' ' + g.baslik + (g.ajan ? ' · ' + (ajanBul(g.ajan)?.ad || g.ajan) : ''))));
+  if (!(p.gorevler || []).length && p.durum !== 'kapali') gorevler.append(el('div', null, 'Görevleri CEO sıradaki sabah toplantısında çıkaracak.'));
+  k.append(gorevler);
+  const notlar = el('div', 'notlar');
+  (p.notlar || []).slice(-3).forEach(n => notlar.append(el('div', null, (n.kaynak === 'ceo' ? 'CEO: ' : 'Sen: ') + n.metin)));
+  k.append(notlar);
+  if (p.durum === 'kapali') return k;
+  const metin = el('textarea'); metin.maxLength = 1000;
+  const islem = el('div', 'islemler');
+  if (p.durum === 'onay_bekliyor') {
+    metin.placeholder = 'Eksik bir şey varsa yaz, “Hayır, devam”a bas.';
+    const evet = el('button', null, 'Evet, bitti'); evet.onclick = () => { SES.tik(); projeIslem({ islem:'onayla', id:p.id }); };
+    const hayir = el('button', null, 'Hayır, devam'); hayir.onclick = () => { SES.tik(); projeIslem({ islem:'reddet', id:p.id, metin:metin.value.trim() || 'Henüz bitmedi.' }); };
+    islem.append(evet, hayir);
+  } else {
+    metin.placeholder = 'CEO’ya not: yön, tercih, öncelik…';
+    const not = el('button', null, 'Not ekle');
+    not.onclick = () => { if (!metin.value.trim()) return tost('Not boş olamaz.'); SES.tik(); projeIslem({ islem:'not', id:p.id, metin:metin.value.trim() }, 'Not eklendi; CEO sonraki toplantıda okur.'); };
+    const kapat = el('button', 'sil', 'Kapat');
+    kapat.onclick = () => { if (confirm(`“${p.baslik}” kapatılsın mı? Toplantılara artık girmez.`)) projeIslem({ islem:'kapat', id:p.id }, 'Proje kapandı.'); };
+    islem.append(not, kapat);
+  }
+  k.append(metin, islem);
+  return k;
+}
+async function projelerSayfasi() {
+  const baslik = el('h2', null, 'Projeler');
+  if (DEMO) return [baslik, el('p', 'alt', 'Demo modunda projeler kapalı.')];
+  let v;
+  try { v = await getJSON('/api/projeler'); } catch { return [baslik, el('p', 'alt', 'Proje listesi alınamadı.')]; }
+  const acik = v.projeler.filter(p => p.durum !== 'kapali'), kapali = v.projeler.filter(p => p.durum === 'kapali').reverse();
+  const t = v.toplanti || {}, saat = t.saatler || { sabah:'09:00', aksam:'17:00' };
+  const sabah = el('input'), aksam = el('input'); sabah.type = aksam.type = 'time'; sabah.value = saat.sabah; aksam.value = saat.aksam;
+  const kaydet = el('button', 'dugme', 'Saatleri kaydet');
+  kaydet.onclick = () => { SES.tik(); projeIslem({ islem:'saatler', sabah:sabah.value, aksam:aksam.value }, 'Toplantı saatleri kaydedildi.'); };
+  const saatSatir = el('div', 'saat-satir'); saatSatir.append(el('span', null, 'Sabah toplantısı'), sabah, el('span', null, 'Akşam toplantısı'), aksam, kaydet);
+  const iz = el('div', 'izgara'); acik.forEach(p => iz.append(projeKarti(p)));
+  const alt = acik.length
+    ? `${acik.length} açık proje. Her gün ${saat.sabah}'da “Bugün ne yapacağız?”, ${saat.aksam}'de “Bugün ne yaptık?” toplantısı yapılır; sonuçlar Telegram'a gelir.`
+    : 'Açık proje yok: toplantı yapılmaz, token harcanmaz. Bir hedef ekle, CEO sıradaki toplantıda planlasın.';
+  const parcalar = [baslik, el('p', 'alt', alt)];
+  if (t.aktif) parcalar.push(el('p', 'alt', '● Şu an toplantıda: ' + (t.aktif.konu || '') + ' (' + (t.aktif.katilimcilar || []).map(id => ajanBul(id)?.ad || id).join(', ') + ')'));
+  parcalar.push(saatSatir, iz, el('h2', 'ara-baslik', 'Yeni proje'), projeFormu());
+  const tut = t.tutanaklar || [];
+  if (tut.length) {
+    const iz2 = el('div', 'izgara');
+    tut.slice(0, 10).forEach(x => {
+      const k = el('div', 'kart soru-kart');
+      k.append(el('div', 'ust', (x.tur === 'sabah' ? '🗓 Sabah' : '🌆 Akşam') + ' · ' + String(x.zaman || '').slice(0, 16).replace('T', ' ')), el('p', null, x.ozet || ''));
+      if ((x.atamalar || []).length) { const ul = el('ul'); x.atamalar.forEach(a => ul.append(el('li', null, (ajanBul(a.ajan)?.ad || a.ajan) + ': ' + kisa(a.prompt || '', 80)))); k.append(ul); }
+      iz2.append(k);
+    });
+    parcalar.push(el('h2', 'ara-baslik', 'Toplantı tutanakları'), iz2);
+  }
+  if (kapali.length) { const iz3 = el('div', 'izgara'); kapali.slice(0, 12).forEach(p => iz3.append(projeKarti(p))); parcalar.push(el('h2', 'ara-baslik', 'Kapanan projeler'), iz3); }
+  return parcalar;
+}
+/* ---------- Sorular: Telegram'a gelenlerin aynısı, buradan da cevaplanır ---------- */
+const SORU_TUR_ADI = { maliyet:'maliyet', 'buyuk-degisiklik':'büyük değişiklik', 'yayin-mail-para':'yayın / mail / para', diger:'basit', eksik:'türü belirsiz' };
+const CEVAPLAYAN_ADI = { 'kullanici-web':'sen (web)', 'kullanici-telegram':'sen (Telegram)', 'ceo-zaman-asimi':'CEO (1 saat doldu)' };
+function soruKimden(s) { return s.ajan === 'ceo' ? 'CEO' + (s.proje_baslik ? ' · ' + s.proje_baslik : '') : (ajanBul(s.ajan)?.ad || s.ajan); }
+async function sorularSayfasi() {
+  const baslik = el('h2', null, 'Sorular');
+  if (DEMO) return [baslik, el('p', 'alt', 'Demo modunda sorular kapalı.')];
+  let v;
+  try { v = await getJSON('/api/sorular'); } catch { return [baslik, el('p', 'alt', 'Sorular alınamadı.')]; }
+  rozetYaz(v.bekleyen.length);
+  const iz = el('div', 'izgara');
+  v.bekleyen.forEach(s => {
+    const k = el('div', 'kart soru-kart');
+    const ust = el('div', 'ust'); ust.append(document.createTextNode(soruKimden(s) + ' '), el('span', 'durum-rozet ' + (s.tur || ''), s.kaynak === 'bitti_mi' ? 'bitti mi?' : (SORU_TUR_ADI[s.tur] || s.tur || '')));
+    k.append(ust, el('p', null, s.kaynak === 'bitti_mi' ? `“${s.proje_baslik || 'Proje'}” bitti mi? Onay için “evet” yaz; değilse eksik olanı yaz.` : s.soru));
+    if (s.kalan_sn != null) k.append(el('div', 'sure', s.kalan_sn > 0 ? `Cevap vermezsen CEO ${Math.ceil(s.kalan_sn / 60)} dk sonra ${['maliyet', 'buyuk-degisiklik', 'yayin-mail-para', 'eksik'].includes(s.tur) ? 'güvenli tarafta' : 'kendisi'} cevaplayacak.` : 'CEO birazdan cevaplayacak.'));
+    const metin = el('textarea'); metin.maxLength = 4000; metin.placeholder = 'Cevabın…';
+    const gonder = el('button', 'koyu', 'Gönder');
+    gonder.onclick = async () => {
+      if (!metin.value.trim()) return tost('Cevap boş olamaz.');
+      gonder.disabled = true; SES.tik();
+      const { durum, veri } = await postJSON('/api/sorular', { islem:'cevapla', soru_id:s.soru_id, cevap:metin.value.trim() });
+      tost(durum === 200 ? (veri.mesaj || 'Cevap iletildi.') : (veri.hata || 'Cevap iletilemedi.'));
+      sekmeAc('sorular');
+    };
+    const islem = el('div', 'islemler'); islem.append(gonder);
+    k.append(metin, islem);
+    iz.append(k);
+  });
+  const parcalar = [baslik, el('p', 'alt', v.bekleyen.length
+    ? `${v.bekleyen.length} soru cevabını bekliyor. Telegram'da Yanıtla ile de cevaplayabilirsin; hangisi önce gelirse o geçerli.`
+    : 'Bekleyen soru yok.'), iz];
+  if (v.son.length) {
+    const iz2 = el('div', 'izgara');
+    v.son.forEach(s => {
+      const k = el('div', 'kart soru-kart');
+      k.append(el('div', 'ust', soruKimden(s) + ' · ' + (CEVAPLAYAN_ADI[s.cevaplayan] || (s.durum === 'ceo' ? 'CEO' : 'cevaplandı'))), el('h4', null, s.soru || ''), el('p', null, '→ ' + (s.cevap || '')));
+      iz2.append(k);
+    });
+    parcalar.push(el('h2', 'ara-baslik', 'Son cevaplananlar'), iz2);
+  }
+  return parcalar;
+}
+function rozetYaz(n) { const r = $('soruRozet'); if (!r) return; r.hidden = !n; r.textContent = n ? String(n) : ''; }
+let rozetZamanlayici = null;
+async function sorularRozetTazele() {
+  if (DEMO) return;
+  clearTimeout(rozetZamanlayici); rozetZamanlayici = setTimeout(sorularRozetTazele, 60000);
+  try { rozetYaz((await getJSON('/api/sorular')).bekleyen.length); } catch { /* sessiz */ }
+}
 function maliyetSayfasi() {
   const k = sayac.kosular || [];
   const token = u => u ? (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) : null;
@@ -2349,6 +2508,7 @@ function maliyetSayfasi() {
   return [el('h2', null, 'Maliyet'), el('p', 'alt', sayac.maliyet_notu || 'Ajanlar yalnız iş gelince çalışır; boştayken model çağrısı yok.'), ozet, tablo];
 }
 document.querySelectorAll('#sekmeler button').forEach(b => { b.onclick = () => { SES.tik(); sekmeAc(b.dataset.sekme); }; b.onmouseenter = () => SES.uzerinde(); });
+sorularRozetTazele();
 
 /* ---------- kamera ---------- */
 let gecis = null;
