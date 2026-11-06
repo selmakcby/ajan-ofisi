@@ -220,6 +220,27 @@ td.sayi,th.sayi{text-align:right}
 .mod.kopuk .nokta{background:#d0554a}
 .tost{position:fixed;left:calc((100% - var(--sag) - 16px) / 2);bottom:92px;transform:translateX(-50%);padding:10px 16px;font-size:13.5px;font-weight:500;border-radius:12px;z-index:6;opacity:0;transition:opacity .25s;pointer-events:none}
 .tost.goster{opacity:1}
+/* giriş ve ilk kurulum katmanı */
+.katman{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 30% 20%,#f8f1e7,var(--krem) 60%,#e6dccd);overflow:auto}
+.katman .kart-k{width:min(560px,100%);padding:30px 32px 26px}
+.katman .marka-k{display:flex;align-items:center;gap:10px;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:15px;margin-bottom:18px}
+.katman h1{font-family:"Space Grotesk",sans-serif;font-size:28px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px}
+.katman p.alt{color:var(--soluk);font-size:14px;margin:0 0 18px;line-height:1.5}
+.katman label{display:block;font-size:12.5px;font-weight:600;color:var(--soluk);margin:12px 0 5px}
+.katman input[type=text],.katman input[type=password]{width:100%;padding:11px 12px;border-radius:10px;border:1px solid rgba(59,52,44,.15);background:#fff;font:inherit;font-size:14.5px;color:var(--murekkep)}
+.katman .dugmeler-k{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:22px}
+.katman .ana{background:var(--mercan);color:#fff;font-weight:600;padding:11px 18px;border-radius:11px}
+.katman .ana:hover{background:var(--mercan-k)}.katman .ana:disabled{opacity:.6;cursor:default}
+.katman .hata-k{color:#a1402a;font-size:13px;min-height:18px;margin-top:10px}
+.katman .bilgi-k{color:#2f6b3f;font-size:13px;margin-top:10px}
+.adimlar-k{display:flex;gap:6px;margin-bottom:18px}.adimlar-k i{flex:1;height:4px;border-radius:4px;background:rgba(59,52,44,.12)}.adimlar-k i.tamam{background:var(--mercan)}
+.sablonlar-k{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:6px 0 10px;max-height:46vh;overflow:auto;padding:2px}
+.sablon-k{text-align:left;padding:12px;border-radius:12px;background:rgba(255,255,255,.75);border:1.5px solid transparent;font-size:13px;line-height:1.35}
+.sablon-k b{display:block;font-size:13.5px;margin-bottom:4px}.sablon-k small{color:var(--soluk)}
+.sablon-k.secili{border-color:var(--mercan);background:#fff}
+.secim-k{margin:10px 0;padding:12px;border-radius:12px;background:rgba(255,255,255,.7);font-size:13.5px}
+.secim-k label{display:flex;gap:8px;align-items:flex-start;color:var(--murekkep);font-weight:500;margin:6px 0}
+.secim-k label small{display:block;color:var(--soluk);font-weight:400}
 </style>
 <script type="importmap">
 {"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
@@ -242,6 +263,7 @@ td.sayi,th.sayi{text-align:right}
   <div class="hap"><span class="nokta" id="aktifNokta"></span><b id="aktif">0</b> ajan çalışıyor</div>
   <span class="saat" id="saat"></span>
   <button class="dugme" id="telegramDugme">Telegram</button>
+  <button class="dugme" id="cikisDugme" title="Çıkış yap">Çıkış</button>
   <button class="dugme" id="genel">Genel bakış</button>
 </header>
 
@@ -387,13 +409,173 @@ addEventListener('pointerdown', () => { if (ses && ses.state === 'suspended') se
 /* ---------- veri katmanı: gerçek API ya da demo ---------- */
 async function getJSON(yol) {
   const r = await fetch(yol, { cache:'no-store' });
+  if (r.status === 401 && !DEMO) location.reload(); // oturum süresi doldu → giriş ekranı
   if (!r.ok) throw new Error(yol + ' ' + r.status);
   return r.json();
 }
 async function postJSON(yol, govde) {
   const r = await fetch(yol, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(govde) });
   const veri = await r.json().catch(() => ({}));
+  if (r.status === 401 && yol !== '/api/oturum' && yol !== '/api/kurulum' && !DEMO) location.reload(); // oturum düştü → giriş
   return { durum:r.status, veri };
+}
+
+/* ---------- giriş ve ilk kurulum: sahne kurulmadan önce ---------- */
+// Not: burada henüz SES/tost gibi aşağıda tanımlanan değerler kullanılamaz (modül sırası).
+function katmanKur(id) {
+  const k = el('div', 'katman'); k.id = id;
+  const kart = el('div', 'kart-k cam');
+  const marka = el('div', 'marka-k'); const logo = el('div', 'logo'); logo.append(el('i'));
+  marka.append(logo, el('span', null, 'Ajan Ofisi'));
+  kart.append(marka); k.append(kart); document.body.append(k);
+  return kart;
+}
+function alan(etiket, tip, deger, ipucu) {
+  const l = el('label', null, etiket); const i = el('input'); i.type = tip; i.value = deger || '';
+  if (ipucu) i.placeholder = ipucu; if (tip === 'password') i.autocomplete = 'new-password';
+  return [l, i];
+}
+function girisGoster() {
+  const kart = katmanKur('giris');
+  const f = el('form');
+  const [l1, ad] = alan('Kullanıcı adı', 'text'); ad.autocomplete = 'username';
+  const [l2, sifre] = alan('Şifre', 'password'); sifre.autocomplete = 'current-password';
+  const hata = el('div', 'hata-k');
+  const b = el('button', 'ana', 'Giriş yap'); b.type = 'submit';
+  const alt = el('div', 'dugmeler-k'); alt.append(el('small', null, 'Şifreni unuttuysan: python sunucu.py --sifre-sifirla'), b);
+  f.append(el('h1', null, 'Tekrar hoş geldin'), el('p', 'alt', 'Ofise girmek için hesabınla giriş yap.'), l1, ad, l2, sifre, hata, alt);
+  f.onsubmit = async e => {
+    e.preventDefault(); b.disabled = true; hata.textContent = '';
+    const { durum, veri } = await postJSON('/api/oturum', { islem:'giris', kullanici_adi:ad.value.trim(), sifre:sifre.value })
+      .catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
+    if (durum === 200) return location.reload();
+    hata.textContent = veri.hata || 'Giriş yapılamadı.'; sifre.value = ''; b.disabled = false; sifre.focus();
+  };
+  kart.append(f); setTimeout(() => ad.focus(), 0);
+}
+function kurulumGoster(oturum) {
+  const kart = katmanKur('kurulum');
+  const ADIMLAR = 4;
+  let adim = oturum.kurulum ? 1 : 3; // hesap var ve giriş yapılmış (mevcut kurulum): ajanlardan devam
+  const ayar = oturum.ayarlar || {};
+  const ciz = (...parcalar) => {
+    const cubuk = el('div', 'adimlar-k');
+    for (let i = 1; i <= ADIMLAR; i++) { const c = el('i'); if (i <= adim) c.className = 'tamam'; cubuk.append(c); }
+    kart.replaceChildren(kart.firstChild, cubuk, ...parcalar);
+  };
+  const dugmeler = (geri, ileri) => { const d = el('div', 'dugmeler-k'); d.append(geri || el('span'), ileri); return d; };
+  const gonder = async (govde, hata) => {
+    const { durum, veri } = await postJSON('/api/kurulum', govde).catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
+    if (durum !== 200) { hata.textContent = veri.hata || 'Kaydedilemedi.'; return false; }
+    return true;
+  };
+
+  function adim1() {
+    adim = 1;
+    const f = el('form'); const hata = el('div', 'hata-k');
+    const [l1, ad] = alan('Adın', 'text', ayar.kullanici, 'Selamlamada görünür: “Günaydın Ayşe.”');
+    const [l2, marka] = alan('Ofisinin adı (isteğe bağlı)', 'text', ayar.marka && ayar.marka !== 'Ajan Ofisi' ? ayar.marka : '', 'Ajan Ofisi');
+    ad.maxLength = marka.maxLength = 40;
+    const ileri = el('button', 'ana', 'Devam'); ileri.type = 'submit';
+    f.append(el('h1', null, 'Hoş geldin'), el('p', 'alt', 'Birkaç adımda ofisini kuralım. Önce seni tanıyalım.'), l1, ad, l2, marka, hata, dugmeler(null, ileri));
+    f.onsubmit = async e => {
+      e.preventDefault(); ileri.disabled = true;
+      if (await gonder({ adim:'ad', kullanici:ad.value.trim(), marka:marka.value.trim() }, hata)) {
+        Object.assign(ayar, { kullanici:ad.value.trim(), marka:marka.value.trim() });
+        return oturum.kurulum ? adim2() : adim3();
+      }
+      ileri.disabled = false;
+    };
+    ciz(f); setTimeout(() => ad.focus(), 0);
+  }
+  function adim2() {
+    adim = 2;
+    const f = el('form'); const hata = el('div', 'hata-k');
+    const [l1, kad] = alan('Kullanıcı adı', 'text', '', 'ör. ramazan'); kad.autocomplete = 'username';
+    const [l2, s1] = alan('Şifre (en az 8 karakter)', 'password');
+    const [l3, s2] = alan('Şifre (tekrar)', 'password');
+    const geri = el('button', 'dugme', 'Geri'); geri.type = 'button'; geri.onclick = adim1;
+    const ileri = el('button', 'ana', 'Hesabı aç'); ileri.type = 'submit';
+    f.append(el('h1', null, 'Hesabını aç'), el('p', 'alt', 'Ofise her girişte bu bilgilerle giriş yapacaksın. Şifre bu bilgisayarda özetlenerek saklanır.'),
+      l1, kad, l2, s1, l3, s2, hata, dugmeler(geri, ileri));
+    f.onsubmit = async e => {
+      e.preventDefault(); hata.textContent = '';
+      if (s1.value.length < 8) { hata.textContent = 'Şifre en az 8 karakter olmalı.'; return; }
+      if (s1.value !== s2.value) { hata.textContent = 'Şifreler eşleşmiyor.'; return; }
+      ileri.disabled = true;
+      if (await gonder({ adim:'hesap', kullanici_adi:kad.value.trim(), sifre:s1.value }, hata)) return adim3();
+      ileri.disabled = false;
+    };
+    ciz(f); setTimeout(() => kad.focus(), 0);
+  }
+  async function adim3() {
+    adim = 3;
+    const hata = el('div', 'hata-k'); const bilgi = el('div', 'bilgi-k');
+    const kutu = el('div'); const secim = el('div');
+    let sablonlar = [], mevcut = [];
+    try {
+      [sablonlar, mevcut] = await Promise.all([getJSON('/api/sablonlar').then(v => v.sablonlar || []),
+        getJSON('/api/ajanlar').then(v => (v.ajanlar || []).filter(a => a.id !== 'ceo'))]);
+    } catch { hata.textContent = 'Şablonlar yüklenemedi.'; }
+    const ozet = () => mevcut.length ? `Ofisinde şu an ${mevcut.length} ajan var: ${mevcut.map(a => a.ad).join(', ')}.` : 'Şu an ofiste yalnız CEO var.';
+    const durumP = el('p', 'alt', ozet());
+    const izgara = el('div', 'sablonlar-k');
+    const kartlar = [];
+    const bos = el('button', 'sablon-k'); bos.type = 'button';
+    bos.append(el('b', null, 'Boş başla'), el('small', null, 'Yalnız CEO ile başla; ajanları sonra kendin ekle.'));
+    bos.onclick = () => { kartlar.forEach(k => k.classList.remove('secili')); bos.classList.add('secili'); secim.replaceChildren(); };
+    izgara.append(bos); kartlar.push(bos);
+    sablonlar.forEach(s => {
+      const k = el('button', 'sablon-k'); k.type = 'button';
+      k.append(el('b', null, s.ad), el('small', null, s.aciklama));
+      k.onclick = () => {
+        kartlar.forEach(x => x.classList.remove('secili')); k.classList.add('secili'); bilgi.textContent = ''; hata.textContent = '';
+        const liste = el('div', 'secim-k'); const kutular = [];
+        s.ajanlar.forEach(a => {
+          const l = el('label'); const c = el('input'); c.type = 'checkbox'; c.checked = true; c.value = a.id;
+          const m = el('span'); m.append(document.createTextNode(a.ad), el('small', null, a.aciklama));
+          l.append(c, m); liste.append(l); kutular.push(c);
+        });
+        const ekle = el('button', 'koyu', 'Seçili ajanları ekle'); ekle.type = 'button';
+        ekle.onclick = async () => {
+          const secili = kutular.filter(c => c.checked).map(c => c.value);
+          if (!secili.length) { hata.textContent = 'En az bir ajan seç.'; return; }
+          ekle.disabled = true;
+          const { durum, veri } = await postJSON('/api/ajanlar', { islem:'sablon', sablon:s.id, ajanlar:secili });
+          ekle.disabled = false;
+          if (durum !== 200) { hata.textContent = veri.hata || 'Eklenemedi.'; return; }
+          bilgi.textContent = `${veri.eklenen.length} ajan eklendi` + (veri.atlanan.length ? `, ${veri.atlanan.length} zaten vardı.` : '.');
+          mevcut = (await getJSON('/api/ajanlar').catch(() => ({ ajanlar:[] }))).ajanlar.filter(a => a.id !== 'ceo');
+          durumP.textContent = ozet();
+        };
+        liste.append(ekle); secim.replaceChildren(liste);
+      };
+      izgara.append(k); kartlar.push(k);
+    });
+    const ileri = el('button', 'ana', 'Devam'); ileri.type = 'button'; ileri.onclick = adim4;
+    kutu.append(el('h1', null, 'Ajanlarını seç'), durumP,
+      el('p', 'alt', 'Sektörüne uygun bir şablonla hazır bir ofisle başla ya da boş başla. Ajanları sonra üstteki “Ajanlar” sekmesinden ekleyip düzenleyebilirsin.'),
+      izgara, secim, hata, bilgi, dugmeler(null, ileri));
+    ciz(kutu);
+  }
+  function adim4() {
+    adim = 4;
+    const hata = el('div', 'hata-k');
+    const gir = el('button', 'ana', 'Ofise gir'); gir.type = 'button';
+    gir.onclick = async () => { gir.disabled = true; if (await gonder({ adim:'bitir' }, hata)) return location.reload(); gir.disabled = false; };
+    const k = el('div');
+    k.append(el('h1', null, 'Ofisin hazır' + (ayar.kullanici ? ', ' + ayar.kullanici : '') + '.'),
+      el('p', 'alt', 'Ajanlar boştayken uyur ve token harcamaz. Alttaki kutudan CEO’ya derdini anlat ya da bir kediye tıklayıp görev ver. Bundan sonra ofise her girişte kullanıcı adın ve şifrenle giriş yapacaksın.'),
+      hata, dugmeler(null, gir));
+    ciz(k);
+  }
+  adim === 1 ? adim1() : adim3();
+}
+if (!DEMO) {
+  let oturum = null;
+  try { oturum = await getJSON('/api/oturum'); } catch { /* sunucu yok: aşağıdaki "sunucu yok" akışı sürer */ }
+  if (oturum && (oturum.kurulum || (oturum.giris && !oturum.sihirbaz_bitti))) { kurulumGoster(oturum); await new Promise(() => {}); }
+  else if (oturum && !oturum.giris) { girisGoster(); await new Promise(() => {}); }
 }
 
 /* ---------- three kurulum ---------- */
@@ -1881,6 +2063,8 @@ function tgCiz(kutu, d, mesaj) {
   }
 }
 $('telegramDugme').onclick = () => { SES.tik(); telegramPaneli(); };
+if (DEMO) $('cikisDugme').style.display = 'none';
+$('cikisDugme').onclick = async () => { await postJSON('/api/oturum', { islem:'cikis' }).catch(() => {}); location.reload(); };
 
 /* ---------- kedi meme'leri (tıklanınca) ---------- */
 const meme = memeKur({ kameraGit, controls, iptal:a => odayaGit(odaBul(a.oda)) });
