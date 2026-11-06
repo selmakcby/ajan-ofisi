@@ -15,6 +15,7 @@ from datetime import datetime
 import ortak
 import projeler
 import sorular
+import toplanti
 
 OTOMATIK_SINIR = 3
 CEVAPLAYAN = {"ceo-zaman-asimi": "CEO, 1 saat dolunca", "kullanici-web": "web", "kullanici-telegram": "Telegram"}
@@ -169,6 +170,9 @@ class Izleyici:
             r = self.ceo_calistir(cevap, kaynak="telegram" if telegram else "arayuz", onceki_cevap=s.get("soru"))
         except Exception as e:  # noqa: BLE001 — IstekHatasi dahil
             return f"Cevabın projeye not olarak eklendi; CEO şu an çalışamadı: {e}"
+        for b in r.get("baslatilan") or []:
+            if b.get("kosu_id"):  # akşam toplantısı bu koşuyu projeye bağlar
+                toplanti.eslesme_ekle(b["kosu_id"], proje_id, None)
         satirlar = [r.get("cevap") or ""]
         satirlar += [f"▶ {b['ajan']} başladı" for b in r.get("baslatilan") or []]
         satirlar += [f"✗ {x.get('ajan')}: {x.get('neden')}" for x in r.get("reddedilen") or []]
