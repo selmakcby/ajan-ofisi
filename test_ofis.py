@@ -985,7 +985,7 @@ def test_kurulum_akisi_ve_giris(tmp):
         assert s.istek("POST", "/api/oturum", {"islem": "giris", "kullanici_adi": "ramazan",
                                                "sifre": "gizli-sifre-1"})[0] == 200
         o = s.istek("GET", "/api/oturum")[1]
-        assert o == {"kurulum": False, "giris": True, "sihirbaz_bitti": True, "kullanici_adi": "ramazan"}
+        assert o == {"kurulum": False, "giris": True, "sihirbaz_bitti": True, "kullanici_adi": "ramazan", "sunucu": False}
         ayar = ortak.ajanlari_yukle()[0]["ayarlar"]
         assert ayar["kullanici"] == "Ramazan" and ayar["marka"] == "CW"
     finally:
@@ -1378,6 +1378,89 @@ def test_kurulum_kodu(tmp):
     finally:
         sunucu.KURULUM_KODU = None
         hesap.giris_basarili()
+        s.kapat()
+
+
+# ---------- Sunucu T3: Claude bağlantısı ----------
+
+API_ANAHTAR = "sk-ant-api03-" + "A" * 40
+OAUTH_TOKEN = "sk-ant-oat01-" + "B" * 40
+
+
+def test_claude_api_anahtari(tmp):
+    import claude_baglanti as cb
+    env = os.path.join(tmp, ".env")
+    assert cb.durum(env)["tur"] == "yerel"                      # yerelde ayar yoksa bu bilgisayarın girişi
+    def red(anahtar):
+        raise ValueError("Anahtar geçersiz.")
+    for bozuk in ("", "abc", "sk-ant-kisa"):
+        try:
+            cb.islem({"islem": "anahtar", "anahtar": bozuk}, env, dogrulayici=red); raise AssertionError(bozuk)
+        except ValueError:
+            pass
+    try:
+        cb.islem({"islem": "anahtar", "anahtar": API_ANAHTAR}, env, dogrulayici=red); raise AssertionError
+    except ValueError:
+        pass
+    assert ortak.env_oku(env) == {}
+    d = cb.islem({"islem": "anahtar", "anahtar": API_ANAHTAR}, env, dogrulayici=lambda a: None)
+    assert d["tur"] == "api" and d["son4"] == API_ANAHTAR[-4:] and API_ANAHTAR not in json.dumps(d)
+    assert ortak.env_oku(env)["OFIS_CLAUDE_API_KEY"] == API_ANAHTAR
+    d = cb.islem({"islem": "token", "token": OAUTH_TOKEN}, env)     # biri yazılınca diğeri silinir
+    assert d["tur"] == "abonelik" and "OFIS_CLAUDE_API_KEY" not in ortak.env_oku(env)
+    assert cb.islem({"islem": "kaldir"}, env)["tur"] == "yerel"
+
+
+def test_claude_token_bicim(tmp):
+    import claude_baglanti as cb
+    env = os.path.join(tmp, ".env")
+    for bozuk in (API_ANAHTAR, "sk-ant-oat01-kisa", ""):
+        try:
+            cb.islem({"islem": "token", "token": bozuk}, env); raise AssertionError(bozuk)
+        except ValueError:
+            pass
+
+
+def test_claude_ortama_gecer(tmp):
+    import claude_baglanti as cb
+    env = os.path.join(tmp, ".env")
+    ortak.env_yaz({"OFIS_TELEGRAM_TOKEN": "tg"}, env)
+    cb.islem({"islem": "anahtar", "anahtar": API_ANAHTAR}, env, dogrulayici=lambda a: None)
+    o = ortak.alt_surec_ortami(env)
+    assert o["ANTHROPIC_API_KEY"] == API_ANAHTAR and "CLAUDE_CODE_OAUTH_TOKEN" not in o
+    assert not any(k.startswith("OFIS_") for k in o)
+    cb.islem({"islem": "token", "token": OAUTH_TOKEN}, env)
+    o = ortak.alt_surec_ortami(env)
+    assert o["CLAUDE_CODE_OAUTH_TOKEN"] == OAUTH_TOKEN and "ANTHROPIC_API_KEY" not in o
+
+
+def test_claude_dogrulama_hatasi_anahtar_sizdirmaz(tmp):
+    import urllib.error
+    import claude_baglanti as cb
+    def ag_yok(istek, timeout=None):
+        raise urllib.error.URLError("bağlantı reddedildi " + istek.full_url)
+    try:
+        cb.api_dogrula(API_ANAHTAR, ac=ag_yok); raise AssertionError
+    except ValueError as e:
+        assert API_ANAHTAR not in str(e) and e.__cause__ is None and e.__suppress_context__
+    def yetkisiz(istek, timeout=None):
+        raise urllib.error.HTTPError(istek.full_url, 401, "Unauthorized", {}, None)
+    try:
+        cb.api_dogrula(API_ANAHTAR, ac=yetkisiz); raise AssertionError
+    except ValueError as e:
+        assert "geçersiz" in str(e) and API_ANAHTAR not in str(e)
+
+
+def test_claude_uclari(tmp):
+    s = _sunucu(tmp)
+    try:
+        assert s.istek("GET", "/api/claude")[0] == 401
+        s.giris()
+        d = s.istek("GET", "/api/claude")[1]
+        assert d["tur"] in ("yerel", "yok") and "sunucu" in d
+        assert s.istek("POST", "/api/claude", {"islem": "token", "token": "kotu"})[0] == 400
+        assert s.istek("GET", "/api/oturum")[1].get("sunucu") is False
+    finally:
         s.kapat()
 
 

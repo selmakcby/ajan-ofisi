@@ -27,6 +27,7 @@ import akis  # noqa: E402
 import telegram_kopru  # noqa: E402
 import hesap  # noqa: E402
 import ajan_yonetimi  # noqa: E402
+import claude_baglanti  # noqa: E402
 
 HOST = os.environ.get("OFIS_HOST", "127.0.0.1")  # Docker: 0.0.0.0 (port Compose'da 127.0.0.1'e açılır)
 ALAN_ADI = os.environ.get("OFIS_ALAN_ADI", "").strip().lower()  # ters vekil arkasındaki adres (ör. ofis.ornek.com)
@@ -144,7 +145,7 @@ def gorev_baslat(ajan_id, etiket=None, prompt=None, kaynak="buton", devam=None):
             if sys.platform == "win32":
                 # Windows'ta tmux yok: her koşu kendi konsol penceresinde açılır (canlı izleme o pencerede).
                 subprocess.Popen(kosucu, cwd=ajan["cwd"], creationflags=subprocess.CREATE_NEW_CONSOLE,
-                                 env=ortak.alt_surec_ortami())
+                                 env=ortak.kosucu_ortami())
             else:
                 tmux = tmux_hazirla()
                 subprocess.run([tmux, "new-window", "-d", "-t", f"={TMUX_OTURUM}:", "-n", ajan_id,
@@ -348,7 +349,7 @@ def oturum_yaniti(token):
         return {"kurulum": True, "adim": "hesap" if ayar["kullanici"] else "ad", "ayarlar": ayar,
                 "kod_gerekli": KURULUM_KODU is not None}
     giris = hesap.oturum_gecerli(token)
-    yanit = {"kurulum": False, "giris": giris,
+    yanit = {"kurulum": False, "giris": giris, "sunucu": ortak.SUNUCU,
              "sihirbaz_bitti": bool((veri.get("ayarlar") or {}).get("kurulum_tamam"))}
     if giris:
         yanit["kullanici_adi"] = hesap.kullanici_adi()
@@ -680,6 +681,8 @@ class Isleyici(SimpleHTTPRequestHandler):
             return self._json(200, hafiza_yaniti())
         if yol.path == "/api/telegram":
             return self._json(200, TELEGRAM.durum())
+        if yol.path == "/api/claude":
+            return self._json(200, claude_baglanti.durum())
         if yol.path == "/api/terminaller":
             return self._json(200, {"terminaller": KOPRU.liste()})
         if yol.path == "/api/olaylar":
@@ -713,6 +716,11 @@ class Isleyici(SimpleHTTPRequestHandler):
                         (prompt is not None and not isinstance(prompt, str)):
                     raise IstekHatasi(400, "etiket/prompt metin olmalı")
                 return self._json(202, gorev_baslat(ajan, etiket=etiket, prompt=prompt))
+            if yol == "/api/claude":
+                try:
+                    return self._json(200, claude_baglanti.islem(veri))
+                except ValueError as e:
+                    raise IstekHatasi(400, str(e)) from e
             if yol == "/api/telegram":
                 try:
                     return self._json(200, TELEGRAM.islem(veri))
