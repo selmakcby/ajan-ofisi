@@ -98,16 +98,24 @@ def hafizaya_ekle(ajan_id, metin):
     return maddeler
 
 
-AJAN_ORTAM = ("HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "DISABLE_AUTOUPDATER")
+AJAN_ORTAM = ("HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "DISABLE_AUTOUPDATER",
+              "OPENCODE_CONFIG", "OPENCODE_DISABLE_AUTOUPDATE")
 
 
-def ajan_ortami():
-    """claude sürecinin ortamı. Sunucuda: ayrı kullanıcının ev dizini (oturum kayıtları volume'da, --resume için)."""
+def ajan_ortami(ek=None):
+    """claude/opencode sürecinin ortamı. Sunucuda: ayrı kullanıcının ev dizini (oturum kayıtları volume'da)."""
     o = ortak.alt_surec_ortami()
     if ortak.SUNUCU:
         o["HOME"] = os.path.join(ortak.VERI, "ev-ajan")
         o["DISABLE_AUTOUPDATER"] = "1"
+    if ek:
+        o.update(ek)
     return o
+
+
+def saglayici(ajan):
+    """Ajanın çalıştığı arka uç: 'claude' (varsayılan) ya da 'opencode'."""
+    return (ajan.get("saglayici") or "claude").strip().lower()
 
 
 def komut_kur(ajan, genel_yasak, cikti_dizini, devam_session=None):
@@ -133,6 +141,71 @@ def komut_kur(ajan, genel_yasak, cikti_dizini, devam_session=None):
     if yasak:
         komut += ["--disallowedTools", *yasak]
     if ortak.SUNUCU:  # gizli dosyaları okuyamayan ayrı kullanıcı (sudoers: yalnız claude, parolasız)
+        komut = ["sudo", "-n", "-u", "ajan", "--preserve-env=" + ",".join(AJAN_ORTAM), "--", *komut]
+    return komut
+
+
+def opencode_izinleri(ajan):
+    """Claude araç izinlerini opencode `permission` kurallarına çevirir (sunucu kısıtları dahil)."""
+    izinli = set(ajan.get("izinli_araclar") or [])
+    if ortak.SUNUCU:
+        izinli = set(ortak.sunucu_araclari(list(izinli)))
+    bash = sorted(a for a in izinli if a == "Bash" or a.startswith("Bash("))
+    if not bash:
+        bash_kural = "deny"
+    elif ortak.SUNUCU:
+        # sunucuda serbest Bash yok: ortak.SUNUCU_BASH = yalnız ls
+        bash_kural = {"ls": "allow", "ls *": "allow", "*": "deny"}
+    else:
+        bash_kural = "allow"
+    read_kural = {"*": "allow", "**/.env": "deny", "**/.env.*": "deny", "**/secret*": "deny", "**/*secret*": "deny"}
+    if ortak.SUNUCU:
+        read_kural["**/proc/**"] = "deny"
+    return {
+        "read": read_kural,
+        "edit": "allow" if ({"Write", "Edit"} & izinli) else "deny",
+        "glob": "allow" if "Glob" in izinli else "deny",
+        "grep": "allow" if "Grep" in izinli else "deny",
+        "list": "allow",
+        "bash": bash_kural,
+        "task": "deny",
+        "question": "deny",
+        "todowrite": "deny",
+        "external_directory": "deny",
+        "webfetch": "allow" if "WebFetch" in izinli else "deny",
+        "websearch": "allow" if "WebSearch" in izinli else "deny",
+    }
+
+
+def opencode_yapilandirma(ajan, kosu_id):
+    """Ajan için geçici opencode config dosyası yazar; yolunu döndürür. OPENCODE_CONFIG ile verilir."""
+    yol = os.path.join(ortak.DURUM_DIZINI, f"opencode-{ajan['id']}-{kosu_id}.json")
+    cfg = {
+        "$schema": "https://opencode.ai/config.json",
+        "share": "disabled",
+        "snapshot": False,
+        "update": "disable",
+        "instructions": [],
+        "permission": opencode_izinleri(ajan),
+    }
+    os.makedirs(ortak.DURUM_DIZINI, exist_ok=True)
+    with open(yol, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=1)
+    # Sunucuda ajan (ayrı kullanıcı) bu dosyayı okumalı; yalnız izin kuralları içerir, sır yok.
+    try:
+        os.chmod(yol, 0o644)
+    except OSError:
+        pass
+    return yol
+
+
+def opencode_komut_kur(ajan, kosu_id, devam_session, tam_prompt, cfg_yolu):
+    exe = shutil.which("opencode") or "/usr/local/bin/opencode"
+    komut = [exe, "run", "--format", "json", "--pure", "-m", ajan["model"]]
+    if devam_session:
+        komut += ["-s", devam_session]
+    komut.append(tam_prompt)  # opencode mesajı konumsal argüman alır
+    if ortak.SUNUCU:  # gizli dosyaları okuyamayan ayrı kullanıcı (sudoers: claude + opencode)
         komut = ["sudo", "-n", "-u", "ajan", "--preserve-env=" + ",".join(AJAN_ORTAM), "--", *komut]
     return komut
 
@@ -174,6 +247,50 @@ def satiri_isle(olay, baglam, sayac=None):
     return None
 
 
+def opencode_token(parca, sayac, birikim):
+    """opencode step_finish parçasındaki token/maliyeti tekilleştirip biriktirir."""
+    parca = parca or {}
+    adet = parca.get("tokens") or {}
+    onbellek = adet.get("cache") or {}
+    usage = {
+        "input_tokens": adet.get("input") or 0,
+        "output_tokens": adet.get("output") or 0,
+        "cache_creation_input_tokens": onbellek.get("write") or 0,
+        "cache_read_input_tokens": onbellek.get("read") or 0,
+    }
+    if sayac is not None:
+        sayac["tekil"].isle(parca.get("id") or parca.get("messageID"), usage)
+        birikim["token"] = dict(sayac["tekil"].toplam)
+    try:
+        birikim["maliyet"] = (birikim.get("maliyet") or 0) + float(parca.get("cost") or 0)
+    except (TypeError, ValueError):
+        pass
+
+
+def opencode_satiri(olay, baglam, sayac, birikim):
+    """opencode `run --format json` olayını basar/olay yazar; metin ve oturum bilgisini biriktirir."""
+    tur = olay.get("type")
+    if olay.get("sessionID"):
+        birikim["oturum"] = olay["sessionID"]
+    parca = olay.get("part") or {}
+    if tur == "text":
+        metin = parca.get("text") or ""
+        if metin.strip():
+            print(metin, flush=True)
+            birikim["metin"] = birikim.get("metin", "") + metin
+    elif tur == "tool_use":
+        durum = parca.get("state") or {}
+        ozet = arac_ozeti(durum.get("input"))
+        ad = parca.get("tool") or parca.get("title") or "araç"
+        print(f"  ⚙ {ad} {ozet}", flush=True)
+        ortak.olay_yaz({**baglam, "tur": "ilerledi", "arac": ad, "detay": ozet})
+    elif tur == "step_finish":
+        opencode_token(parca, sayac, birikim)
+    elif tur == "error":
+        birikim["hata"] = str(parca.get("error") or olay.get("error") or "")[:300]
+        print(f"  ! {birikim['hata']}", flush=True)
+
+
 def kos(arg_dosyasi):
     with open(arg_dosyasi, encoding="utf-8") as f:
         arg = json.load(f)
@@ -193,7 +310,12 @@ def kos(arg_dosyasi):
     else:
         tam_prompt = GOREV_SABLONU.format(ad=ajan["ad"], oda=ajan["oda"], bugun=ortak.bugun(),
                                           hafiza=hafiza_oku(ajan["id"]), gorev=gorev)
-    komut = komut_kur(ajan, ortak.yasakli_araclar(veri), cikti_dizini, devam.get("session_id"))
+    sag = saglayici(ajan)
+    cfg_yolu = opencode_yapilandirma(ajan, kosu_id) if sag == "opencode" else None
+    if sag == "opencode":
+        komut = opencode_komut_kur(ajan, kosu_id, devam.get("session_id"), tam_prompt, cfg_yolu)
+    else:
+        komut = komut_kur(ajan, ortak.yasakli_araclar(veri), cikti_dizini, devam.get("session_id"))
 
     baslangic = time.time()
     ortak.durum_yaz(ajan["id"], {"durum": "calisiyor", "kosu_id": kosu_id, "pid": os.getpid(),
@@ -205,16 +327,21 @@ def kos(arg_dosyasi):
 
     sonuc, hata = None, None
     sayac = {"tarih": ortak.bugun(), "tekil": token_sayac.MesajTekil()}
+    birikim = {"metin": "", "token": token_sayac.bos(), "maliyet": 0, "oturum": None, "hata": None}
     try:
         with open(log_yolu, "w", encoding="utf-8") as log:
             calisma_dizini = YALIN_DIZIN if ajan.get("yalin") else ajan["cwd"]
             ortak.ajan_klasoru_ac(calisma_dizini)
+            ortam_ek = {"OPENCODE_CONFIG": cfg_yolu, "OPENCODE_DISABLE_AUTOUPDATE": "1"} if sag == "opencode" else None
             surec = subprocess.Popen(komut, cwd=calisma_dizini, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                     env=ajan_ortami(),  # ofis sırları yok; yalnız Claude bağlantısı
+                                     env=ajan_ortami(ortam_ek),  # ofis sırları yok; yalnız model bağlantısı
                                      encoding="utf-8", errors="replace")  # Windows yerel kodlaması cp1254 olabilir
-            surec.stdin.write(tam_prompt)
-            surec.stdin.close()
+            if sag == "opencode":  # mesaj komut satırında; stdin'i kapat
+                surec.stdin.close()
+            else:
+                surec.stdin.write(tam_prompt)
+                surec.stdin.close()
             for satir in surec.stdout:
                 log.write(satir)
                 log.flush()
@@ -223,12 +350,29 @@ def kos(arg_dosyasi):
                 except json.JSONDecodeError:
                     print(satir.rstrip(), flush=True)
                     continue
-                sonuc = satiri_isle(olay, baglam, sayac) or sonuc
+                if sag == "opencode":
+                    opencode_satiri(olay, baglam, sayac, birikim)
+                else:
+                    sonuc = satiri_isle(olay, baglam, sayac) or sonuc
             kod = surec.wait()
-            if kod != 0 and not sonuc:
+            if sag == "opencode":
+                sonuc = {"result": birikim["metin"].strip(), "session_id": birikim["oturum"],
+                         "usage": birikim["token"], "total_cost_usd": round(birikim["maliyet"], 6) or None,
+                         "is_error": bool(birikim["hata"])}
+                if birikim["hata"] and not sonuc["result"]:
+                    hata = birikim["hata"]
+                elif kod != 0 and not sonuc["result"]:
+                    hata = f"opencode çıkış kodu {kod}"
+            elif kod != 0 and not sonuc:
                 hata = f"claude çıkış kodu {kod}"
     except Exception as e:  # koşu ne olursa olsun bitiş olayı yazılmalı
         hata = f"{type(e).__name__}: {e}"
+    finally:
+        if cfg_yolu:
+            try:
+                os.remove(cfg_yolu)
+            except OSError:
+                pass
 
     try:
         token_kesinle(baglam, sonuc, sayac)

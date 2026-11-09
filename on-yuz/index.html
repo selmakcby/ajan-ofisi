@@ -298,6 +298,7 @@ td.sayi,th.sayi{text-align:right}
   <div class="hap"><span class="nokta" id="aktifNokta"></span><b id="aktif">0</b> ajan çalışıyor</div>
   <span class="saat" id="saat"></span>
   <button class="dugme" id="claudeDugme">Claude</button>
+  <button class="dugme" id="opencodeDugme">Opencode</button>
   <button class="dugme" id="telegramDugme">Telegram</button>
   <button class="dugme" id="cikisDugme" title="Çıkış yap">Çıkış</button>
   <button class="dugme" id="genel">Genel bakış</button>
@@ -540,6 +541,39 @@ function claudeFormu(kutu, d, yenile) {
   }
   kutu.append(alt, mesaj);
 }
+/* ---------- Opencode bağlantısı formu: üst çubuktaki Opencode paneli ---------- */
+const OPENCODE_TUR = { kurulu:'Kurulu', yok:'Kurulu değil' };
+function opencodeFormu(kutu, d, yenile) {
+  const mesaj = el('div', 'tg-not');
+  const yaz = (m, hata) => { mesaj.textContent = m; mesaj.style.color = hata ? '#a1402a' : ''; };
+  const satirlar = el('div', 'satirlar');
+  const satir = (k, v) => { const s = el('div', 'satir'); s.append(el('span', null, k), el('span', null, v || '-')); satirlar.append(s); };
+  satir('Durum', OPENCODE_TUR[d.tur] || d.tur);
+  if (d.surum) satir('Sürüm', d.surum);
+  satir('Giriş', d.auth ? 'Yapılmış (auth.json)' : 'Yok');
+  satir('Deneme modeli', d.model || '-');
+  kutu.append(satirlar);
+  kutu.append(el('p', 'tg-not',
+    'Opencode kendi kimlik deposunu kullanır: sunucuda bir kez `opencode auth login` çalıştır. ' +
+    'Ajan formunda sağlayıcıyı Opencode yapıp modeli "sağlayıcı/model" biçiminde yaz (ör. myprovider/deepseek-v4.1-flash).'));
+  const gonder = async (govde, btn) => {
+    btn.disabled = true; yaz(govde.islem === 'dene' ? 'Deneniyor…' : 'Yükleniyor…');
+    const { durum, veri } = await postJSON('/api/opencode', govde).catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
+    btn.disabled = false;
+    if (durum !== 200) return yaz(veri.hata || 'İşlem yapılamadı.', true);
+    if (veri.deneme) return yaz(`Bağlantı çalışıyor: "${veri.deneme.yanit}" (${veri.deneme.model})`);
+    if (veri.modeller) return yaz(veri.modeller.length ? veri.modeller.join(', ') : 'Model bulunamadı.');
+    yenile(veri);
+  };
+  const alt = el('div', 'tg-alt');
+  if (d.tur === 'kurulu') {
+    const t = el('button', 'dugme', 'Bağlantıyı dene'); t.type = 'button'; t.onclick = () => gonder({ islem:'dene' }, t); alt.append(t);
+    const m = el('button', 'dugme', 'Modelleri listele'); m.type = 'button'; m.onclick = () => gonder({ islem:'modeller' }, m); alt.append(m);
+  } else {
+    kutu.append(el('p', 'tg-not', 'Bu sunucuda opencode komutu bulunamadı. Docker imajında kurulu olmalı ya da sunucuya kurulmalı.'));
+  }
+  kutu.append(alt, mesaj);
+}
 function kurulumGoster(oturum) {
   const kart = katmanKur('kurulum');
   const ADIMLAR = 5;
@@ -613,7 +647,7 @@ function kurulumGoster(oturum) {
     const ciz2 = v => {
       const ic = el('div'); claudeFormu(ic, v, ciz2);
       kutu.replaceChildren(el('h1', null, 'Claude bağlantısı'),
-        el('p', 'alt', 'Ajanların çalışması için Claude’a bağlanmalı. API anahtarı ya da aboneliğinle bağlan; sonra üstteki “Claude” panelinden değiştirebilirsin.'),
+        el('p', 'alt', 'Ajanların çalışması için Claude\'a bağlanmalı. API anahtarı ya da abonelikle bağlan; sonra üstteki "Claude" panelinden değiştirebilirsin. Claude yerine Opencode kullanacaksan "Şimdilik atla"; kurulumdan sonra üstteki "Opencode" panelinden bağlanıp ajan formunda sağlayıcıyı seçebilirsin.'),
         ic, hata, dugmeler(null, ileri));
       ileri.textContent = v.tur === 'yok' ? 'Şimdilik atla' : 'Devam';
     };
@@ -1813,12 +1847,15 @@ const MODEL_ADI = { haiku:'Haiku 4.5', sonnet:'Sonnet 5.5', opus:'Opus 5.5', fab
 function modelAdi(m) {
   if (!m) return '';
   if (MODEL_ADI[m]) return MODEL_ADI[m];
+  if (String(m).includes('/')) return String(m); // opencode sağlayıcı/model
   const e = String(m).match(/claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/);
   return e ? e[1][0].toUpperCase() + e[1].slice(1) + ' ' + e[2] + '.' + e[3] : String(m);
 }
+const SAGLAYICI_ADI = { claude:'Claude', opencode:'Opencode' };
 // Ofis koşusu ajanlar.json'daki modelle çalışır; terminal oturumu senin açtığın modelle (transkriptten okunur).
 function modelSatiri(a) {
-  const ofis = modelAdi(a.model);
+  const sag = a.saglayici || 'claude';
+  const ofis = modelAdi(a.model) + (sag !== 'claude' ? ' · ' + (SAGLAYICI_ADI[sag] || sag) : '');
   const term = [...new Set([...terminaller.values()].filter(t => t.ajan === a.id && t.model).map(t => modelAdi(t.model)))];
   return term.length ? `Ofis koşusu: ${ofis} · Terminal: ${term.join(', ')}` : ofis;
 }
@@ -2274,10 +2311,22 @@ function ajanFormu(a, v) {
   const dl = (metin2, girdi, ipucu) => { det.append(el('label', null, metin2), girdi); if (ipucu) det.append(el('div', 'ipucu', ipucu)); return girdi; };
   const cwd = dl('Çalışma klasörü', metin(a.cwd && a.cwd !== 'calisma/' + a.id ? a.cwd : '', 'Boş bırakırsan ofisin içinde ajana özel klasör açılır'),
     'Var olan bir proje klasörünün tam yolunu yazabilirsin. Klasör yoksa ajan “kurulmadı” görünür.');
+  const saglayici = el('select');
+  [['claude', 'Claude (Claude Code)'], ['opencode', 'Opencode (sağlayıcı/model)']].forEach(([d, m]) => { const o = el('option', null, m); o.value = d; saglayici.append(o); });
+  saglayici.value = a.saglayici || 'claude';
+  dl('Sağlayıcı', saglayici, 'Opencode seçilirse model alanı "sağlayıcı/model" biçiminde doldurulur (ör. myprovider/deepseek-v4.1-flash).');
   const model = el('select'); [['sonnet', 'Sonnet (dengeli)'], ['haiku', 'Haiku (hızlı, ekonomik)'], ['opus', 'Opus (en güçlü)']].forEach(([d, m]) => { const o = el('option', null, m); o.value = d; model.append(o); });
   if (a.model && !['sonnet', 'haiku', 'opus'].includes(a.model)) { const o = el('option', null, 'Dosyadaki: ' + a.model); o.value = a.model; model.append(o); }
   model.value = a.model || 'sonnet'; // dosyadaki tam model adı korunur
-  dl('Model', model);
+  const modelMetin = metin(a.model && a.model.includes('/') ? a.model : '', 'ör. myprovider/deepseek-v4.1-flash'); modelMetin.maxLength = 120;
+  const modelKutu = el('div');
+  const modelGuncelle = () => {
+    modelKutu.replaceChildren();
+    modelKutu.append(saglayici.value === 'opencode' ? modelMetin : model);
+  };
+  saglayici.onchange = modelGuncelle;
+  dl('Model', modelKutu);
+  modelGuncelle();
   det.append(el('label', null, 'Yetkiler'));
   const araclar = el('textarea'); araclar.value = (a.izinli_araclar || []).join('\n');
   const kutular = YETKI_ADLARI.map(([k, ad2]) => {
@@ -2316,8 +2365,10 @@ function ajanFormu(a, v) {
     const ajan = { ad:ad.value.trim(), aciklama:ac.value.trim(), cwd:cwd.value.trim(),
       izinli_araclar:[...new Set(araclar.value.split('\n').map(s => s.trim()).filter(Boolean))],
       hazir_gorevler:[...gorevler.children].map(s => ({ etiket:s.children[0].value.trim(), prompt:s.children[2].value.trim() })).filter(g => g.etiket || g.prompt),
-      yalin:yalin.checked, tetik_kelime:tetik.value.trim() };
-    if (yeni || model.value !== a.model) ajan.model = model.value; // değişmediyse gönderme (dosyadaki ad kalır)
+      yalin:yalin.checked, tetik_kelime:tetik.value.trim(), saglayici:saglayici.value };
+    const secilenModel = saglayici.value === 'opencode' ? modelMetin.value.trim() : model.value;
+    if (ajan.saglayici === 'opencode' && !secilenModel) return tost('Opencode için "sağlayıcı/model" biçiminde model yaz.');
+    if (yeni || saglayici.value !== (a.saglayici || 'claude') || secilenModel !== a.model) ajan.model = secilenModel;
     if (a.id === 'ceo') { delete ajan.cwd; } // CEO ofis klasöründe kalır
     if (oda.value === '__yeni') { if (!yeniAd.value.trim()) return tost('Yeni odanın adını yaz.'); ajan.yeni_oda = { ad:yeniAd.value.trim(), tema:tema.value || null }; }
     else if (a.id !== 'ceo') ajan.oda = oda.value;
@@ -2664,6 +2715,17 @@ async function claudePaneli() {
   const ciz = v => { kutu.replaceChildren(); claudeFormu(kutu, v, ciz); }; ciz(d);
 }
 $('claudeDugme').onclick = () => { SES.tik(); claudePaneli(); };
+async function opencodePaneli() {
+  panelAjan = panelOda = null; odaVurgu(null);
+  const kapat = el('button', 'kapat', '×'); kapat.onclick = () => { SES.tik(); panelKapat(); };
+  const kutu = el('div', 'tg-panel');
+  panel.replaceChildren(kapat, el('div', 'oda-etiket', 'Bağlantı'), el('h2', null, 'Opencode'), kutu); panel.classList.add('acik');
+  if (DEMO) return kutu.append(el('p', 'tg-not', 'Demo modunda Opencode bağlantısı kapalı.'));
+  let d; try { d = await getJSON('/api/opencode'); } catch { return kutu.append(el('p', 'tg-not', 'Sunucuya ulaşılamadı.')); }
+  if (!panel.contains(kutu)) return;
+  const ciz = v => { kutu.replaceChildren(); opencodeFormu(kutu, v, ciz); }; ciz(d);
+}
+$('opencodeDugme').onclick = () => { SES.tik(); opencodePaneli(); };
 if (DEMO) $('cikisDugme').style.display = 'none';
 try { const b = sessionStorage.getItem('ofis-bildirim'); if (b) { sessionStorage.removeItem('ofis-bildirim'); tost(b); } } catch { /* yok */ }
 $('cikisDugme').onclick = async () => { await postJSON('/api/oturum', { islem:'cikis' }).catch(() => {}); location.reload(); };

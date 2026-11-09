@@ -14,6 +14,8 @@ import ortak
 YETKILER = {"okuma": ["Read", "Glob", "Grep"], "yazma": ["Write", "Edit"], "komut": ["Bash"],
             "web": ["WebSearch", "WebFetch"]}
 MODELLER = ("sonnet", "haiku", "opus")
+SAGLAYICILAR = ("claude", "opencode")
+OPENCODE_MODEL_DESENI = re.compile(r"^[a-z0-9-]+/[A-Za-z0-9._:-]+$")
 TEMALAR = ("ceo", "yazi", "kod", "tasarim", "sosyal", "arastirma", "gun-sonu", "atolye", "bakim", "posta", "veri")
 MAKS_AJAN = 60
 MAKS_AD = 60
@@ -69,6 +71,11 @@ def dogrula(veri):
                 raise ValueError("Hazır görev biçimi bozuk.")
         if not all(isinstance(x, str) for x in a.get("izinli_araclar") or []):
             raise ValueError("Araç listesi bozuk.")
+        if a.get("saglayici") not in (None, *SAGLAYICILAR):
+            raise ValueError(f"Geçersiz sağlayıcı: {a.get('saglayici')!r}")
+        if a.get("saglayici") == "opencode" and isinstance(a.get("model"), str) \
+                and not OPENCODE_MODEL_DESENI.match(a["model"]):
+            raise ValueError(f"Opencode modeli 'saglayici/model' biçiminde olmalı: {a.get('model')!r}")
     if "ceo" not in idler:
         raise ValueError("CEO silinemez.")
     for o in veri.get("odalar") or []:  # aynı id'li oda eski dosyalarda olabilir: ilki geçerli, reddedilmez
@@ -166,10 +173,20 @@ def _alanlari_uygula(veri, ajan, alanlar):
         raise ValueError("CEO kendi odasında kalır.")
     if "aciklama" in alanlar:
         ajan["aciklama"] = _metin(alanlar["aciklama"] or "", "Açıklama", MAKS_ACIKLAMA)
+    if "saglayici" in alanlar:
+        sag = alanlar["saglayici"]
+        if sag not in SAGLAYICILAR:
+            raise ValueError("Sağlayıcı Claude ya da Opencode olmalı.")
+        ajan["saglayici"] = sag
     if "model" in alanlar:
-        if alanlar["model"] not in MODELLER:
+        model = alanlar["model"]
+        sag = ajan.get("saglayici") or "claude"
+        if sag == "opencode":
+            if not isinstance(model, str) or not OPENCODE_MODEL_DESENI.match(model) or len(model) > 120:
+                raise ValueError("Opencode modeli 'saglayici/model' biçiminde olmalı (ör. myprovider/deepseek-v4.1-flash).")
+        elif model not in MODELLER:
             raise ValueError("Model Sonnet, Haiku ya da Opus olmalı.")
-        ajan["model"] = alanlar["model"]
+        ajan["model"] = model
     if "izinli_araclar" in alanlar:
         araclar = alanlar["izinli_araclar"]
         if not isinstance(araclar, list) or not all(isinstance(x, str) and 0 < len(x) <= 100 for x in araclar):
@@ -207,7 +224,7 @@ def ajan_ekle(alanlar):
         veri = oku()
         ad = _metin(alanlar.get("ad"), "Ajan adı", MAKS_AD, bos_olabilir=False)
         ajan = {"id": id_turet(ad, {a.get("id") for a in veri["ajanlar"]}), "ad": ad, "oda": "genel",
-                "cwd": "", "model": "sonnet", "ne_zaman": "istek", "ne_zaman_metin": "İstek gelince",
+                "cwd": "", "saglayici": "claude", "model": "sonnet", "ne_zaman": "istek", "ne_zaman_metin": "İstek gelince",
                 "aciklama": "", "izinli_araclar": list(YETKILER["okuma"]), "hazir_gorevler": []}
         if len(veri["ajanlar"]) >= MAKS_AJAN:
             raise ValueError(f"En fazla {MAKS_AJAN} ajan olabilir.")

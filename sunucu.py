@@ -28,6 +28,7 @@ import telegram_kopru  # noqa: E402
 import hesap  # noqa: E402
 import ajan_yonetimi  # noqa: E402
 import claude_baglanti  # noqa: E402
+import opencode_baglanti  # noqa: E402
 import projeler  # noqa: E402
 import toplanti  # noqa: E402
 
@@ -762,6 +763,8 @@ class Isleyici(SimpleHTTPRequestHandler):
             return self._json(200, sorular_yaniti())
         if yol.path == "/api/claude":
             return self._json(200, claude_baglanti.durum())
+        if yol.path == "/api/opencode":
+            return self._json(200, opencode_baglanti.durum())
         if yol.path == "/api/terminaller":
             return self._json(200, {"terminaller": KOPRU.liste()})
         if yol.path == "/api/olaylar":
@@ -798,6 +801,11 @@ class Isleyici(SimpleHTTPRequestHandler):
             if yol == "/api/claude":
                 try:
                     return self._json(200, claude_baglanti.islem(veri))
+                except ValueError as e:
+                    raise IstekHatasi(400, str(e)) from e
+            if yol == "/api/opencode":
+                try:
+                    return self._json(200, opencode_baglanti.islem(veri))
                 except ValueError as e:
                     raise IstekHatasi(400, str(e)) from e
             if yol == "/api/telegram":

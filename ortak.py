@@ -346,7 +346,7 @@ SAAT_DESENI = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 ENV_IZIN = 0o600  # .env yalnız sahibi okuyabilsin (paylaşılan Linux/macOS makineleri)
 
 
-SIR_ONEKLERI = ("OFIS_TELEGRAM_", "OFIS_CLAUDE_")
+SIR_ONEKLERI = ("OFIS_TELEGRAM_", "OFIS_CLAUDE_", "OFIS_OPENCODE_")
 
 
 def kosucu_ortami():
