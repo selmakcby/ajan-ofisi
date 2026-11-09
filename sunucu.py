@@ -46,6 +46,9 @@ TMUX_OTURUM = "ofis"
 ON_YUZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "on-yuz")  # kodun yanında
 IZINLI_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
 IZINLI_HOST = re.compile(r"^(localhost|127\.0\.0\.1)(:\d+)?$")
+# Ek kabul edilen adlar: iç ağdan (ör. nginx proxy manager → http://ajan-ofisi-ofis-1:8796) gelen istekler.
+# Virgülle ayrılır; OFIS_EK_HOSTLAR="ajan-ofisi-ofis-1,ofis"
+EK_HOSTLAR = {h.strip().lower() for h in os.environ.get("OFIS_EK_HOSTLAR", "").split(",") if h.strip()}
 MAKS_GOVDE = 64_000  # 10 hazır görev × 4000 karakter sığsın
 SSE_OTURUM_SN = 2.0  # açık olay akışında oturum bu aralıkla yeniden denetlenir
 GIRIS_KILIDI = threading.Lock()  # bekleme denetimi + scrypt + hata kaydı tek parça (paralel deneme ve bellek)
@@ -93,13 +96,22 @@ def cerez(token):
 
 def host_izinli(host):
     host = (host or "").lower()
-    return bool(IZINLI_HOST.match(host)) or bool(ALAN_ADI) and re.fullmatch(re.escape(ALAN_ADI) + r"(:\d+)?", host) is not None
+    if IZINLI_HOST.match(host):
+        return True
+    if EK_HOSTLAR and host.split(":", 1)[0] in EK_HOSTLAR:
+        return True
+    return bool(ALAN_ADI) and re.fullmatch(re.escape(ALAN_ADI) + r"(:\d+)?", host) is not None
 
 
 def origin_izinli(origin):
     origin = (origin or "").lower()
-    return bool(IZINLI_ORIGIN.match(origin)) or bool(ALAN_ADI) and \
-        re.fullmatch(r"https?://" + re.escape(ALAN_ADI) + r"(:\d+)?", origin) is not None
+    if IZINLI_ORIGIN.match(origin):
+        return True
+    if EK_HOSTLAR:
+        ad = re.sub(r"^[a-z]+://", "", origin).split("/", 1)[0]
+        if ad.split(":", 1)[0] in EK_HOSTLAR:
+            return True
+    return bool(ALAN_ADI) and re.fullmatch(r"https?://" + re.escape(ALAN_ADI) + r"(:\d+)?", origin) is not None
 
 
 class IstekHatasi(Exception):

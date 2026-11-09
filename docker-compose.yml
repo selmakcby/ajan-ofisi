@@ -23,5 +23,12 @@ services:
       retries: 3
       start_period: 10s
 
+    networks:
+      - proxy_shared
+
 volumes:
   ofis-veri:
+
+networks:
+  proxy_shared:
+    external: true
