@@ -2344,6 +2344,26 @@ def test_evet_mi_buyuk_turkce():  # F7
     assert projeler.evet_mi("BİTTİ") and projeler.evet_mi("EVET, BİTTİ!") and projeler.evet_mi("Onaylıyorum")
 
 
+def test_kopan_baglanti_traceback_basmaz(tmp):  # tarayıcı boştaki keep-alive bağlantıyı koparır (WinError 10053/10054)
+    import io as _io
+    import socket
+    import struct
+    import time as _time
+    s = _sunucu(tmp)
+    gercek = sys.stderr
+    sys.stderr = yakala = _io.StringIO()
+    try:
+        for _ in range(3):
+            k = socket.create_connection(("127.0.0.1", s.port))
+            k.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))  # kapanışta RST
+            k.close()
+        _time.sleep(0.5)
+    finally:
+        sys.stderr = gercek
+        s.kapat()
+    assert "Traceback" not in yakala.getvalue(), yakala.getvalue()
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")  # Windows'ta yönlendirilmiş çıktı cp1254 olabilir
     sys.stderr.reconfigure(encoding="utf-8")
