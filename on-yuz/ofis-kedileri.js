@@ -3,7 +3,7 @@
 // Temizlikçi: elinde kova ve süpürgeyle oda oda dolaşır; yerleri süpürür, masaları siler, duvardaki çerçeveleri siler.
 // İkisi de hiçbir ajana/model çağrısına bağlı değildir; tıklanınca miyavlarlar.
 import * as THREE from 'three';
-import { createCat } from './kedi.js';
+import { createCat } from './kedi.js?v=2';
 
 const MAT = new Map();
 const mat = (renk, ek = {}) => {
@@ -106,7 +106,7 @@ export function ofisKedileriKur({ scene, odalar, kutu, secilebilir }) {
     if (tur === 'bekci') {
       sapka(kedi.dugum.bas);
       yelek(kedi.dugum.govde);
-      kedi.setPoz('ayakta'); // iki ayağı üstünde dik yürüyüş
+      if (typeof kedi.setPoz === 'function') kedi.setPoz('ayakta'); // eski önbellekteki kedi.js'de yoksa sahne çökmesin
       bilesen.fener = fener(); bilesen.fener.position.set(.17, .5, .42); grup.add(bilesen.fener);
     } else {
       onluk(kedi.dugum.govde);
