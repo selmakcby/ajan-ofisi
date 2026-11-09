@@ -626,6 +626,23 @@ class Isleyici(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write(f"{self.log_date_time_string()} {fmt % args}\n")
 
+    # Statik dosyalar (index.html, JS modülleri) güncelleme sonrası eski kopyayla çalışmasın:
+    # koşullu isteği yok say (304 üretme) ve yanıta no-store ekle.
+    def send_head(self):
+        if "If-Modified-Since" in self.headers:
+            del self.headers["If-Modified-Since"]
+        self._statik_yanit = True
+        try:
+            return super().send_head()
+        finally:
+            self._statik_yanit = False
+
+    def end_headers(self):
+        if getattr(self, "_statik_yanit", False):
+            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
     def _guvenlik(self):
         host = self.headers.get("Host", "")
         if not host_izinli(host):
