@@ -339,6 +339,7 @@ import { createCat, ajanDeseni, ajanAksesuari } from './kedi.js';
 import { memeKur, memeBul } from './meme.js';
 import { portreleriUret } from './portre.js';
 import { dekorKur, masaLambasi } from './dekor.js';
+import { ofisKedileriKur } from './ofis-kedileri.js';
 import { eglenceKur, tasmaYerleri, yatakKur, balonDoku } from './eglence.js';
 import { geceMi, saatAl, yerAta, balonMetni, sonrakiBalon, TUR_MS } from './eglence-mantik.js';
 import { toplantiKur } from './toplanti.js';
@@ -445,6 +446,7 @@ const SES = {
   uyan: () => ton(392, .18, .035, 'sine', 0, 1.6),
   bitti: () => [523, 659, 784, 1047].forEach((f, i) => ton(f, .16, .04, 'sine', i * .06)),
   hafiza: () => [880, 1320].forEach((f, i) => ton(f, .3, .03, 'sine', i * .09)),
+  miyav: () => { ton(520, .26, .055, 'triangle', 0, 1.75); ton(900, .3, .045, 'triangle', .13, .5); },
 };
 addEventListener('pointerdown', sesAc);
 addEventListener('keydown', sesAc);
@@ -1323,6 +1325,9 @@ AJANLAR.forEach(a => {
   // kıvrılma pozu kökü kediye göre (-.62, .3, .84): kedinin merkezi yatak noktasına gelsin
   if (y) a.yatakYeri = { anahtar:'yatak', pos:new THREE.Vector3(oda.cx + y.x + .62 * a.olcek, y.y - .2 * a.olcek, oda.cz + y.z - .84 * a.olcek), ry:0, durum:'uyuyor', ortu:y.ortu };
 });
+
+/* ---------- modele bağlı olmayan ofis kedileri: Bekçi (dışarıda devriye) + Temizlikçi (oda oda) ---------- */
+const OFIS_KEDILERI = ofisKedileriKur({ scene, odalar:ODALAR, kutu:KUTU, secilebilir });
 
 /* ---------- gündüz/gece: kim nerede (model çağrısı yok, 0 token) ---------- */
 let atama = new Map(), atamaZaman = -9;
@@ -2674,13 +2679,15 @@ function hedefBul(e) {
   fare.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   ray.setFromCamera(fare, camera);
   const hits = ray.intersectObjects(secilebilir, false);
-  const aj = hits.find(h => h.object.userData.ajan);
-  if (aj) { const a = ajanBul(aj.object.userData.ajan); return { ajan:a.id, oda:a.oda }; }
+  for (const h of hits) { // en yakın hedef önce: ofis kedisi miyavlar, ajan paneli açılır
+    if (h.object.userData.miyav) return { miyav:h.object.userData.miyav };
+    if (h.object.userData.ajan) { const a = ajanBul(h.object.userData.ajan); return { ajan:a.id, oda:a.oda }; }
+  }
   return hits[0] ? { oda:hits[0].object.userData.oda } : null;
 }
 tuval.addEventListener('pointermove', e => {
   const h = hedefBul(e);
-  const anahtar = h ? (h.ajan || h.oda) : null, eski = ustteki ? (ustteki.ajan || ustteki.oda) : null;
+  const anahtar = h ? (h.ajan || h.oda || h.miyav) : null, eski = ustteki ? (ustteki.ajan || ustteki.oda || ustteki.miyav) : null;
   if (anahtar !== eski) { ustteki = h; if (h) SES.uzerinde(); odaVurgu(secOda); tuval.style.cursor = h ? 'pointer' : 'default'; }
 });
 tuval.addEventListener('pointerdown', e => { basNokta = [e.clientX, e.clientY]; });
@@ -2690,6 +2697,7 @@ tuval.addEventListener('pointerup', e => {
   if (meme.aktif()) { const eski = meme.kapat(); if (!h) { if (eski) odayaGit(odaBul(eski.oda)); return; } }
   if (!h) return;
   SES.tik();
+  if (h.miyav) { SES.miyav(); OFIS_KEDILERI.tepki(h.miyav, saat.elapsedTime); return; } // ofis kedisi: miyavla, panel yok
   const oda = odaBul(h.oda);
   odaVurgu(oda.id);
   if (h.ajan) {
@@ -2823,6 +2831,7 @@ function dongu() {
   atamaGuncelle(t);
   eglenceGuncelle(t, dt);
   AJANLAR.forEach(a => { kediYuru(a, t); ajanAnimasyon(a, t, dt); });
+  OFIS_KEDILERI.guncelle(dt, t);
   zarfGuncelle(dt); akisGuncelle(dt); cekirdekGuncelle(t, dt); altAjanAnimasyon(t, dt);
   if (t - ledZaman > .16) { ledZaman = t; ledCiz(t); }
   if (t - hatZaman > 1.7) {

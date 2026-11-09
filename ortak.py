@@ -288,24 +288,37 @@ def surec_yasiyor(pid):
         return False
 
     if sys.platform == "win32":
-        # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
+        # Windows'ta os.kill(pid, 0) süreci SONLANDIRIR; bu yüzden yalnız sorgu yapan
+        # OpenProcess + GetExitCodeProcess kullanılır (bkz. GitHub issue #3).
+        from ctypes import wintypes
+
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         SYNCHRONIZE = 0x00100000
         STILL_ACTIVE = 259
+        ERROR_ACCESS_DENIED = 5
 
-        handle = ctypes.windll.kernel32.OpenProcess(
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+        handle = kernel32.OpenProcess(
             PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid
         )
         if not handle:
-            return False
+            # ERROR_ACCESS_DENIED: süreç var ama sorguya izin yok (yükseltilmiş süreçler)
+            return ctypes.get_last_error() == ERROR_ACCESS_DENIED
 
         try:
-            exit_code = ctypes.c_ulong()
-            if ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            exit_code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
                 return exit_code.value == STILL_ACTIVE
             return False
         finally:
-            ctypes.windll.kernel32.CloseHandle(handle)
+            kernel32.CloseHandle(handle)
     else:
         try:
             os.kill(pid, 0)
