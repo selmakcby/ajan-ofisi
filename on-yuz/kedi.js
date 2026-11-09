@@ -167,6 +167,7 @@ function pozTamamla(p) {
 }
 const KUYRUK_OTUR = [P([0, .05, -.27], [-1.57, 0, 1.2]), P([0, .12, 0], [0, 0, .42]), P([0, .12, 0], [0, 0, .42]), P([0, .12, 0], [0, 0, .4]), P([0, .12, 0], [.35, 0, .3]), P([0, .12, 0], [.45, 0, .2])];
 const KUYRUK_KIVRIL = [P([0, .07, -.29], [-1.57, 0, 1.4]), P([0, .12, 0], [0, 0, .5]), P([0, .12, 0], [0, 0, .5]), P([0, .12, 0], [0, 0, .5]), P([0, .12, 0], [0, 0, .45]), P([0, .12, 0], [0, 0, .4])];
+const KUYRUK_AYAKTA = [P([0, .3, -.2], [-2.0, 0, .1]), P([0, .12, 0], [0, 0, .1]), P([0, .12, 0], [0, 0, .12]), P([0, .12, 0], [0, 0, .12]), P([0, .12, 0], [0, 0, .1]), P([0, .12, 0], [0, 0, .1])];
 export const POZ = {
   otur: pozTamamla({
     kok: P(), govde: P([0, .36, -.02], [.1, 0, 0], [.3, .38, .29]), gogus: P([0, .47, .17], [.15, 0, 0], [.19, .25, .13]),
@@ -174,6 +175,14 @@ export const POZ = {
     bas: P([0, .86, .08]), kulakL: P([-.15, .16, -.01], [-.1, 0, .32]), onL: P([-.11, .52, .17], [-1.2, 0, .04]),
     boyun: P([0, .64, .17], [.25, 0, 0]),
     ...Object.fromEntries(KUYRUK_OTUR.map((v, i) => ['k' + i, v])),
+  }),
+  // ayakta: iki arka ayağı üstünde dikilir, ön patiler arkada birleşik (bekçi yürüyüşü)
+  ayakta: pozTamamla({
+    kok: P(), govde: P([0, .5, -.01], [-.15, 0, 0], [.27, .42, .27]), gogus: P([0, .63, .11], [-.08, 0, 0], [.18, .2, .12]),
+    kalcaL: P([-.12, .28, -.03], [0, 0, 0], [.14, .16, .2]), ayakL: P([-.1, .055, .04], [0, 0, 0], [.075, .05, .11]),
+    bas: P([0, .9, .07]), kulakL: P([-.15, .16, -.01], [-.1, 0, .32]), onL: P([-.11, .5, -.14], [2.2, 0, .16]),
+    boyun: P([0, .72, .11], [.18, 0, 0]),
+    ...Object.fromEntries(KUYRUK_AYAKTA.map((v, i) => ['k' + i, v])),
   }),
   // uyku: masanın sol boş köşesinde, laptopun yanında kıvrılmış
   kivril: pozTamamla({
@@ -277,7 +286,7 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
   NODLAR.forEach(n => { taban[n] = POZ.kivril[n].slice(); });
   const yuz = { ...YUZ0, acik:0 };
   let durum = 'uyuyor', t = Math.random() * 10, bittiT = -1, kirpT = 2 + Math.random() * 3, kirp = 0;
-  let meme = null, memePoz = null, uyanT = -1;
+  let meme = null, memePoz = null, uyanT = -1, ozelPoz = null;
 
   let dis = 'uyuyor'; // dışarıdan son gelen durum; 'bitti' her karede gelse de gerinme bir kez oynar
   function setDurum(yeni) {
@@ -287,6 +296,9 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
     dis = yeni;
     durum = yeni;
     if (yeni === 'bitti') bittiT = t;
+  }
+  function setPoz(ad) { // dışarıdan sabit poz (örn. bekçinin dikilişi); mega animasyonundan bağımsız
+    ozelPoz = ad && POZ[ad] ? POZ[ad] : null;
   }
   function setMeme(spec, { aninda = false } = {}) {
     meme = spec || null;
@@ -319,6 +331,7 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
 
   function hedefPoz() {
     if (meme && !uyaniyor()) return memePoz;
+    if (ozelPoz && !meme) return ozelPoz;
     if (meme || durum !== 'uyuyor') return POZ.otur;
     return POZ.kivril;
   }
@@ -444,7 +457,7 @@ export function createCat({ desen = 'tekir', ton = 0, yavru = false, aksesuar = 
   update(0);
   // bilardo: vuruş anı bir kez bildirilir (top o an yola çıkar)
   const vurdu = () => { const v = vurduMu; vurduMu = false; return v; };
-  return { group, dugum, setDurum, setMeme, setKontur, update, vurdu, get durum() { return durum; }, desen };
+  return { group, dugum, setDurum, setMeme, setPoz, setKontur, update, vurdu, get durum() { return durum; }, desen };
 }
 
 /* ---------- takım → desen eşlemesi ---------- */
