@@ -22,16 +22,16 @@ button{font:inherit;color:inherit;cursor:pointer;border:none;background:none}
 h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--soluk)}
 
 /* üst bar */
-.ustbar{position:fixed;top:0;left:0;right:0;height:60px;display:flex;align-items:center;gap:28px;padding:0 20px;background:rgba(250,245,237,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid rgba(59,52,44,.08);z-index:5}
-.marka{display:flex;align-items:center;gap:10px}
-.logo{width:30px;height:30px;border-radius:9px;background:var(--mercan);display:grid;place-items:center;box-shadow:0 4px 14px rgba(255,122,89,.4)}
+.ustbar{position:fixed;top:0;left:0;right:0;height:60px;display:flex;align-items:center;gap:16px;padding:0 18px;background:rgba(250,245,237,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid rgba(59,52,44,.08);z-index:5}
+.marka{display:flex;align-items:center;gap:10px;flex:none;min-width:0}
+.logo{width:30px;height:30px;border-radius:9px;background:var(--mercan);display:grid;place-items:center;box-shadow:0 4px 14px rgba(255,122,89,.4);flex:none}
 .logo i{width:13px;height:9px;border-radius:3px;background:#fff7f2;position:relative}
 .logo i::before,.logo i::after{content:"";position:absolute;top:3px;width:3px;height:3px;border-radius:1px;background:var(--mercan)}
 .logo i::before{left:3px}.logo i::after{right:3px}
-.marka b{font-family:"Space Grotesk",sans-serif;font-size:18px;font-weight:700;letter-spacing:-.01em}
-.marka small{font-size:11px;color:var(--soluk);font-weight:600;letter-spacing:.06em;margin-left:2px}
-.sekmeler{display:flex;gap:4px;height:100%}
-.sekmeler button{position:relative;padding:0 12px;font-size:14px;font-weight:500;color:#6d6357}
+.marka b{font-family:"Space Grotesk",sans-serif;font-size:18px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.sekmeler{display:flex;gap:4px;height:100%;min-width:0;overflow-x:auto;scrollbar-width:none}
+.sekmeler::-webkit-scrollbar{display:none}
+.sekmeler button{position:relative;padding:0 12px;font-size:14px;font-weight:500;color:#6d6357;white-space:nowrap;flex:none}
 .sekmeler button:hover{color:var(--murekkep)}
 .sekmeler button.secili{color:var(--murekkep);font-weight:600}
 .sekmeler button.secili::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:2px;background:var(--murekkep)}
@@ -44,6 +44,8 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 .saat{font-size:13px;color:var(--soluk);font-variant-numeric:tabular-nums}
 .dugme{padding:7px 12px;font-size:13px;font-weight:500;border-radius:999px;background:rgba(255,255,255,.7);border:1px solid rgba(59,52,44,.08);transition:background .15s,transform .15s}
 .dugme:hover{background:#fff}.dugme:active{transform:scale(.97)}
+@media(max-width:1200px){.ustbar{gap:10px;padding:0 12px}.hap{display:none}}
+@media(max-width:1040px){.saat{display:none}.marka b{max-width:150px}}
 
 /* selamlama */
 .selam{position:fixed;top:78px;left:22px;width:330px;padding:18px 20px;z-index:3}
@@ -284,7 +286,7 @@ td.sayi,th.sayi{text-align:right}
 <div id="etiketler"></div>
 
 <header class="ustbar">
-  <div class="marka"><div class="logo"><i></i></div><b id="marka">Ajan Ofisi</b><small>AJAN OFİSİ</small></div>
+  <div class="marka"><div class="logo"><i></i></div><b id="marka">Ajan Ofisi</b></div>
   <nav class="sekmeler" id="sekmeler">
     <button data-sekme="ofis" class="secili">Ofis</button>
     <button data-sekme="odalar">Odalar</button>
@@ -543,6 +545,7 @@ function claudeFormu(kutu, d, yenile) {
 }
 /* ---------- Opencode bağlantısı formu: üst çubuktaki Opencode paneli ---------- */
 const OPENCODE_TUR = { kurulu:'Kurulu', yok:'Kurulu değil' };
+const OPENCODE_SAGLAYICILAR = ['anthropic', 'openai', 'google', 'openrouter', 'deepseek', 'groq', 'mistral', 'xai', 'myprovider'];
 function opencodeFormu(kutu, d, yenile) {
   const mesaj = el('div', 'tg-not');
   const yaz = (m, hata) => { mesaj.textContent = m; mesaj.style.color = hata ? '#a1402a' : ''; };
@@ -550,25 +553,58 @@ function opencodeFormu(kutu, d, yenile) {
   const satir = (k, v) => { const s = el('div', 'satir'); s.append(el('span', null, k), el('span', null, v || '-')); satirlar.append(s); };
   satir('Durum', OPENCODE_TUR[d.tur] || d.tur);
   if (d.surum) satir('Sürüm', d.surum);
-  satir('Giriş', d.auth ? 'Yapılmış (auth.json)' : 'Yok');
+  satir('Giriş', d.auth ? 'Yapılmış' : 'Yok');
   satir('Deneme modeli', d.model || '-');
   kutu.append(satirlar);
-  kutu.append(el('p', 'tg-not',
-    'Opencode kendi kimlik deposunu kullanır: sunucuda bir kez `opencode auth login` çalıştır. ' +
-    'Ajan formunda sağlayıcıyı Opencode yapıp modeli "sağlayıcı/model" biçiminde yaz (ör. myprovider/deepseek-v4.1-flash).'));
-  const gonder = async (govde, btn) => {
-    btn.disabled = true; yaz(govde.islem === 'dene' ? 'Deneniyor…' : 'Yükleniyor…');
+
+  // yapılandırılmış sağlayıcılar (anahtarlar asla gösterilmez)
+  const listeKutu = el('div', 'satirlar');
+  const listele = l => {
+    listeKutu.replaceChildren();
+    if (!l || !l.length) { listeKutu.append(el('p', 'tg-not', 'Kayıtlı sağlayıcı yok.')); return; }
+    l.forEach(x => {
+      const s = el('div', 'satir'); s.append(el('span', null, x.id), el('span', null, x.tur || 'api'));
+      const sil = el('button', 'dugme tg-kaldir', 'Sil'); sil.type = 'button';
+      sil.onclick = async () => { sil.disabled = true; await gonder({ islem:'auth-sil', saglayici:x.id }, sil); };
+      s.append(sil); listeKutu.append(s);
+    });
+  };
+  kutu.append(el('h3', null, 'Sağlayıcılar'), listeKutu);
+  if (d.saglayicilar) listele(d.saglayicilar);
+  else postJSON('/api/opencode', { islem:'auth-liste' }).then(({ durum, veri }) => { if (durum === 200) listele(veri.saglayicilar); }).catch(() => {});
+
+  // sağlayıcı + anahtar ekle
+  const f = el('form', 'tg-form');
+  const prov = el('input'); prov.type = 'text'; prov.placeholder = 'sağlayıcı (ör. openai)'; prov.autocomplete = 'off';
+  const dl = el('datalist'); dl.id = 'ocSaglayicilar'; OPENCODE_SAGLAYICILAR.forEach(x => { const o = el('option'); o.value = x; dl.append(o); });
+  prov.setAttribute('list', 'ocSaglayicilar');
+  const anahtar = el('input'); anahtar.type = 'password'; anahtar.placeholder = 'API anahtarı'; anahtar.autocomplete = 'off';
+  const ekle = el('button', 'koyu', 'Kaydet'); ekle.type = 'submit';
+  f.append(prov, dl, anahtar, ekle);
+  f.onsubmit = e => {
+    e.preventDefault();
+    const s = prov.value.trim(), a = anahtar.value.trim();
+    anahtar.value = '';
+    if (!s || !a) return yaz('Sağlayıcı ve anahtar gerekli.', true);
+    gonder({ islem:'auth-ekle', saglayici:s, anahtar:a }, ekle);
+  };
+  kutu.append(el('h3', null, 'Sağlayıcı ekle'), el('p', 'tg-not', 'Anahtar tarayıcıya geri gönderilmez; sunucuda yalnız opencode kimlik deposuna yazılır.'), f);
+
+  async function gonder(govde, btn) {
+    btn.disabled = true; yaz(govde.islem === 'dene' ? 'Deneniyor…' : 'İşleniyor…');
     const { durum, veri } = await postJSON('/api/opencode', govde).catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
     btn.disabled = false;
     if (durum !== 200) return yaz(veri.hata || 'İşlem yapılamadı.', true);
     if (veri.deneme) return yaz(`Bağlantı çalışıyor: "${veri.deneme.yanit}" (${veri.deneme.model})`);
-    if (veri.modeller) return yaz(veri.modeller.length ? veri.modeller.join(', ') : 'Model bulunamadı.');
+    if (veri.saglayicilar) { listele(veri.saglayicilar); return yaz('Kaydedildi.'); }
+    if (veri.modeller) { const liste = (veri.modeller || {}).modeller || []; return yaz(liste.length ? `${liste.length} model önbelleğe alındı.` : 'Model bulunamadı.'); }
     yenile(veri);
-  };
+  }
+
   const alt = el('div', 'tg-alt');
   if (d.tur === 'kurulu') {
     const t = el('button', 'dugme', 'Bağlantıyı dene'); t.type = 'button'; t.onclick = () => gonder({ islem:'dene' }, t); alt.append(t);
-    const m = el('button', 'dugme', 'Modelleri listele'); m.type = 'button'; m.onclick = () => gonder({ islem:'modeller' }, m); alt.append(m);
+    const m = el('button', 'dugme', 'Modelleri yenile'); m.type = 'button'; m.onclick = () => gonder({ islem:'modeller', tazele:true }, m); alt.append(m);
   } else {
     kutu.append(el('p', 'tg-not', 'Bu sunucuda opencode komutu bulunamadı. Docker imajında kurulu olmalı ya da sunucuya kurulmalı.'));
   }
@@ -2319,14 +2355,25 @@ function ajanFormu(a, v) {
   if (a.model && !['sonnet', 'haiku', 'opus'].includes(a.model)) { const o = el('option', null, 'Dosyadaki: ' + a.model); o.value = a.model; model.append(o); }
   model.value = a.model || 'sonnet'; // dosyadaki tam model adı korunur
   const modelMetin = metin(a.model && a.model.includes('/') ? a.model : '', 'ör. myprovider/deepseek-v4.1-flash'); modelMetin.maxLength = 120;
+  const modelDl = el('datalist'); modelDl.id = 'ocModeller'; modelMetin.setAttribute('list', 'ocModeller');
+  const variant = el('select');
+  [['', 'Varsayılan (sağlayıcı)'], ['minimal', 'Minimal'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['max', 'Max']]
+    .forEach(([v, t]) => { const o = el('option', null, t); o.value = v; variant.append(o); });
+  variant.value = a.variant || '';
   const modelKutu = el('div');
   const modelGuncelle = () => {
     modelKutu.replaceChildren();
-    modelKutu.append(saglayici.value === 'opencode' ? modelMetin : model);
+    if (saglayici.value === 'opencode') {
+      modelKutu.append(modelMetin, modelDl, el('div', 'ipucu', 'Düşünme gücü'), variant);
+    } else modelKutu.append(model);
   };
   saglayici.onchange = modelGuncelle;
   dl('Model', modelKutu);
   modelGuncelle();
+  // opencode model listesi (önbellekten, hızlı) → combobox önerileri
+  if (!DEMO) getJSON('/api/opencode').then(v => {
+    (v.modeller || []).forEach(m => { const o = el('option'); o.value = m; modelDl.append(o); });
+  }).catch(() => {});
   det.append(el('label', null, 'Yetkiler'));
   const araclar = el('textarea'); araclar.value = (a.izinli_araclar || []).join('\n');
   const kutular = YETKI_ADLARI.map(([k, ad2]) => {
@@ -2365,7 +2412,8 @@ function ajanFormu(a, v) {
     const ajan = { ad:ad.value.trim(), aciklama:ac.value.trim(), cwd:cwd.value.trim(),
       izinli_araclar:[...new Set(araclar.value.split('\n').map(s => s.trim()).filter(Boolean))],
       hazir_gorevler:[...gorevler.children].map(s => ({ etiket:s.children[0].value.trim(), prompt:s.children[2].value.trim() })).filter(g => g.etiket || g.prompt),
-      yalin:yalin.checked, tetik_kelime:tetik.value.trim(), saglayici:saglayici.value };
+      yalin:yalin.checked, tetik_kelime:tetik.value.trim(), saglayici:saglayici.value,
+      variant:saglayici.value === 'opencode' ? variant.value : '' };
     const secilenModel = saglayici.value === 'opencode' ? modelMetin.value.trim() : model.value;
     if (ajan.saglayici === 'opencode' && !secilenModel) return tost('Opencode için "sağlayıcı/model" biçiminde model yaz.');
     if (yeni || saglayici.value !== (a.saglayici || 'claude') || secilenModel !== a.model) ajan.model = secilenModel;

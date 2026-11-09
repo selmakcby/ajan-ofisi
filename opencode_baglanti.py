@@ -10,11 +10,16 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
 import ortak
 
 VARSAYILAN_TEST_MODEL = "opencode/deepseek-v4.1-flash-free"
 AJAN_ORTAM = "HOME,OPENCODE_CONFIG,OPENCODE_DISABLE_AUTOUPDATE"
+
+
+def model_cache_yolu():
+    return os.path.join(ortak.DURUM_DIZINI, "opencode-modeller.json")
 
 
 def exe():
@@ -86,8 +91,8 @@ def durum(env_yolu=None):
     return {"tur": "kurulu", "surum": surum, "auth": _auth_var(), "model": test_modeli(env_yolu)}
 
 
-def modeller():
-    """`opencode models` çıktısındaki provider/model satırlarını döndürür (en fazla 200)."""
+def _modeller_getir():
+    """`opencode models` çalıştırıp provider/model satırlarını döndürür (yavaş olabilir)."""
     try:
         r = subprocess.run(_komut([exe(), "models"]), capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=90, env=_ortam())
@@ -97,7 +102,46 @@ def modeller():
         raise ValueError("Model listesi alınamadı (opencode kurulumu/oturumu?).")
     desen = re.compile(r"^[a-z0-9-]+/[A-Za-z0-9._:-]+$")
     liste = [s.strip() for s in (r.stdout or "").splitlines() if desen.match(s.strip())]
-    return list(dict.fromkeys(liste))[:200]
+    return list(dict.fromkeys(liste))[:300]
+
+
+def _cache_oku():
+    try:
+        with open(model_cache_yolu(), encoding="utf-8") as f:
+            veri = json.load(f)
+        if isinstance(veri, dict) and isinstance(veri.get("modeller"), list):
+            return veri
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def model_ozeti():
+    """Önbellekteki model listesi (komut çalıştırmadan, hızlı). Yoksa boş."""
+    c = _cache_oku()
+    return c or {"modeller": [], "zaman": None}
+
+
+def _cache_yaz(liste):
+    try:
+        os.makedirs(ortak.DURUM_DIZINI, exist_ok=True)
+        gecici = model_cache_yolu() + ".tmp"
+        with open(gecici, "w", encoding="utf-8") as f:
+            json.dump({"modeller": liste, "zaman": ortak.simdi_iso()}, f, ensure_ascii=False, indent=1)
+        os.replace(gecici, model_cache_yolu())
+    except OSError:
+        pass
+
+
+def modeller(tazele=False):
+    """Model listesi: JSON önbellekten (hızlı); tazele=True ya da önbellek yoksa `opencode models` çalışır."""
+    if not tazele:
+        c = _cache_oku()
+        if c:
+            return c
+    liste = _modeller_getir()
+    _cache_yaz(liste)
+    return {"modeller": liste, "zaman": ortak.simdi_iso()}
 
 
 def baglanti_dene(env_yolu=None):
@@ -130,10 +174,45 @@ def baglanti_dene(env_yolu=None):
     return {"tamam": True, "yanit": metin.strip()[:80], "model": model}
 
 
+def _auth_helper_komut():
+    """Kimlik deposunu yöneten yardımcı betiği çalıştıracak komut (sunucuda sudo ile ajan)."""
+    if ortak.SUNUCU:
+        # HOME korunur: auth.json ajanın ev dizininde (/veri/ev-ajan) olsun.
+        return ["sudo", "-n", "-u", "ajan", "--preserve-env=HOME", "--", "python3",
+                "/uygulama/docker/opencode_auth.py"]
+    return [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "docker", "opencode_auth.py")]
+
+
+def auth_islem(veri):
+    """auth.json yönetimi: liste / ekle / sil. Anahtar hiçbir zaman geri döndürülmez."""
+    try:
+        r = subprocess.run(_auth_helper_komut(), input=json.dumps(veri), capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=45, env=_ortam())
+    except (OSError, subprocess.TimeoutExpired):
+        raise ValueError("Opencode kimlik deposuna ulaşılamadı.") from None
+    try:
+        sonuc = json.loads((r.stdout or "").strip() or "{}")
+    except json.JSONDecodeError:
+        raise ValueError("Kimlik deposu yanıtı okunamadı.") from None
+    if isinstance(sonuc, dict) and sonuc.get("hata"):
+        raise ValueError(sonuc["hata"])
+    if r.returncode != 0:
+        raise ValueError("Kimlik deposu işlemi başarısız.")
+    return sonuc
+
+
 def islem(veri, env_yolu=None):
     i = veri.get("islem")
     if i == "dene":
         return {**durum(env_yolu), "deneme": baglanti_dene(env_yolu)}
     if i == "modeller":
-        return {**durum(env_yolu), "modeller": modeller()}
+        return {**durum(env_yolu), **modeller(tazele=bool(veri.get("tazele")))}
+    if i == "auth-liste":
+        return auth_islem({"islem": "liste"})
+    if i == "auth-ekle":
+        auth_islem({"islem": "ekle", "saglayici": veri.get("saglayici"), "anahtar": veri.get("anahtar")})
+        return {"tamam": True, **auth_islem({"islem": "liste"})}
+    if i == "auth-sil":
+        auth_islem({"islem": "sil", "saglayici": veri.get("saglayici")})
+        return {"tamam": True, **auth_islem({"islem": "liste"})}
     raise ValueError("bilinmeyen işlem")

@@ -15,6 +15,8 @@ YETKILER = {"okuma": ["Read", "Glob", "Grep"], "yazma": ["Write", "Edit"], "komu
             "web": ["WebSearch", "WebFetch"]}
 MODELLER = ("sonnet", "haiku", "opus")
 SAGLAYICILAR = ("claude", "opencode")
+# Opencode model varyantı (sağlayıcıya özgü düşünme gücü); boş = varsayılan
+VARIANTLAR = ("", "minimal", "low", "medium", "high", "max")
 OPENCODE_MODEL_DESENI = re.compile(r"^[a-z0-9-]+/[A-Za-z0-9._:-]+$")
 TEMALAR = ("ceo", "yazi", "kod", "tasarim", "sosyal", "arastirma", "gun-sonu", "atolye", "bakim", "posta", "veri")
 MAKS_AJAN = 60
@@ -76,6 +78,8 @@ def dogrula(veri):
         if a.get("saglayici") == "opencode" and isinstance(a.get("model"), str) \
                 and not OPENCODE_MODEL_DESENI.match(a["model"]):
             raise ValueError(f"Opencode modeli 'saglayici/model' biçiminde olmalı: {a.get('model')!r}")
+        if a.get("variant") not in (None, *[v for v in VARIANTLAR if v]):
+            raise ValueError(f"Geçersiz düşünme gücü: {a.get('variant')!r}")
     if "ceo" not in idler:
         raise ValueError("CEO silinemez.")
     for o in veri.get("odalar") or []:  # aynı id'li oda eski dosyalarda olabilir: ilki geçerli, reddedilmez
@@ -178,6 +182,14 @@ def _alanlari_uygula(veri, ajan, alanlar):
         if sag not in SAGLAYICILAR:
             raise ValueError("Sağlayıcı Claude ya da Opencode olmalı.")
         ajan["saglayici"] = sag
+    if "variant" in alanlar:
+        v = alanlar["variant"] or ""
+        if v not in VARIANTLAR:
+            raise ValueError("Düşünme gücü minimal, low, medium, high ya da max olmalı.")
+        if v:
+            ajan["variant"] = v
+        else:
+            ajan.pop("variant", None)
     if "model" in alanlar:
         model = alanlar["model"]
         sag = ajan.get("saglayici") or "claude"

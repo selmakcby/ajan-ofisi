@@ -23,6 +23,7 @@ RUN groupadd -g 1500 ekip \
  && useradd -m -u 1001 -G ekip ajan \
  && echo "ofis ALL=(ajan) NOPASSWD:SETENV: $(command -v claude)" > /etc/sudoers.d/ofis-ajan \
  && echo "ofis ALL=(ajan) NOPASSWD:SETENV: $(command -v opencode)" >> /etc/sudoers.d/ofis-ajan \
+ && echo "ofis ALL=(ajan) NOPASSWD:SETENV: $(command -v python3) /uygulama/docker/opencode_auth.py" >> /etc/sudoers.d/ofis-ajan \
  && chmod 0440 /etc/sudoers.d/ofis-ajan \
  && visudo -cf /etc/sudoers.d/ofis-ajan
 

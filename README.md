@@ -67,11 +67,12 @@ docker compose logs ofis                             # ilk açılışta KURULUM 
   doğrulanır) ya da **Claude aboneliği** (kendi bilgisayarında `claude setup-token` çalıştır, çıkan `sk-ant-oat…`
   metnini yapıştır). "Bağlantıyı dene" çok kısa bir çağrıyla birkaç token harcar. Anahtar tarayıcıya geri gönderilmez.
 - **Opencode (alternatif sağlayıcı):** ajan bazında Claude yerine [Opencode](https://opencode.ai) kullanılabilir.
-  Üstteki **Opencode** paneli kurulum/sürüm/giriş durumunu gösterir; "Bağlantıyı dene" ve "Modelleri listele" çalışır.
-  Sunucuda bir kez `opencode auth login` gerekir (`HOME=/veri/ev-ajan`, yani `ajan` kullanıcısı için); model
-  `OFIS_OPENCODE_MODEL` ile (ya da ajan formunda) `sağlayıcı/model` biçiminde verilir. Bir ajanı Opencode'a almak için
-  formda **Sağlayıcı: Opencode** seç ve modeli yaz (ör. `myprovider/deepseek-v4.1-flash`). İzinler Claude araç
-  listesinden çevrilir; `.env`/`secret` okuma her zaman kapalıdır.
+  Üstteki **Opencode** panelinden sağlayıcı + API anahtarı **tarayıcıdan** eklenir/silinir (terminal gerekmez; anahtar
+  sunucuda yalnız opencode kimlik deposuna yazılır, tarayıcıya geri dönmez). "Bağlantıyı dene" ve "Modelleri yenile"
+  çalışır; model listesi `durum/opencode-modeller.json`'a önbelleğe alınır. Ajan formunda **Sağlayıcı: Opencode**
+  seçilince model bir **combobox** olur (önbellekteki modellerden seçilir ya da `sağlayıcı/model` yazılır) ve
+  **düşünme gücü** (varsayılan / minimal / low / medium / high / max) seçilebilir. İzinler Claude araç listesinden
+  çevrilir; `.env`/`secret` okuma her zaman kapalıdır.
 - **Veriler** tek bir Docker volume'unda (`ofis-veri` → `/veri`): hesap, ajanlar, hafıza, çıktılar, ayarlar,
   `CLAUDE.md` (sunucuda düzenlenebilir) ve Claude oturum kayıtları. Güncelleme: `git pull && docker compose up -d
   --build` (veri kalır). Yedek: `docker run --rm -v ajan-ofisi_ofis-veri:/veri -v "$PWD":/yedek alpine tar czf

@@ -202,6 +202,9 @@ def opencode_yapilandirma(ajan, kosu_id):
 def opencode_komut_kur(ajan, kosu_id, devam_session, tam_prompt, cfg_yolu):
     exe = shutil.which("opencode") or "/usr/local/bin/opencode"
     komut = [exe, "run", "--format", "json", "--pure", "-m", ajan["model"]]
+    variant = (ajan.get("variant") or "").strip()
+    if variant:
+        komut += ["--variant", variant]  # sağlayıcıya özgü düşünme gücü (minimal/low/medium/high/max)
     if devam_session:
         komut += ["-s", devam_session]
     komut.append(tam_prompt)  # opencode mesajı konumsal argüman alır
