@@ -2,7 +2,7 @@
 // eglenceKur: PlayStation'lı TV, kanepe, armut koltuk, bilardo, iki tavla, çay-kahve köşesi, koltuklar.
 // Döndürdüğü "yer"ler kedilerin gündüz oturduğu noktalardır (oda grubuna göre yerel).
 import * as THREE from 'three';
-import { yatakDizilimi, bilardoAdim, bilardoDurdu, dovusYeni, dovusAdim } from './eglence-mantik.js';
+import { yatakDizilimi, bilardoAdim, bilardoDurdu, dovusYeni, dovusAdim } from './eglence-mantik.js?v=3';
 
 const PI = Math.PI;
 const yon = (x, z, hx, hz) => Math.atan2(hx - x, hz - z); // kedi +z'ye bakar; (hx,hz)'ye dönmesi için ry

@@ -1,8 +1,8 @@
 // Ajan Ofisi · panel avatarları: her ajanın kendi 3D kedisi, meme pozunda, kafa-omuz portre (256×256)
 // Açılışta bir kez ayrı küçük bir renderer'da üretilir; Map<ajanId, dataURL> döner.
 import * as THREE from 'three';
-import { createCat } from './kedi.js?v=2';
-import { memeBul } from './meme.js';
+import { createCat } from './kedi.js?v=3';
+import { memeBul } from './meme.js?v=3';
 
 const BOYUT = 256;
 

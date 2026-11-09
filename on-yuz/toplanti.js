@@ -1,7 +1,7 @@
 // Ajan Ofisi · toplantı odası (prosedürel, model çağrısı yok): uzun masa, kişi sayısı kadar sandalye,
 // başta CEO koltuğu, duvarda toplantı TV'si. Yerler oda grubuna göre yereldir.
 import * as THREE from 'three';
-import { oturmaDuzeni, masaUzunlugu, MASA_EN } from './toplanti-mantik.js';
+import { oturmaDuzeni, masaUzunlugu, MASA_EN } from './toplanti-mantik.js?v=3';
 
 const MASA_Z = .5;     // masa odanın biraz önünde; arka duvarda TV
 const OTURAK_Y = .56;  // kedinin oturduğu yükseklik

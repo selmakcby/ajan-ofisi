@@ -3,7 +3,7 @@
 // Temizlikçi: elinde kova ve süpürgeyle oda oda dolaşır; yerleri süpürür, masaları siler, duvardaki çerçeveleri siler.
 // İkisi de hiçbir ajana/model çağrısına bağlı değildir; tıklanınca miyavlarlar.
 import * as THREE from 'three';
-import { createCat } from './kedi.js?v=2';
+import { createCat } from './kedi.js?v=3';
 
 const MAT = new Map();
 const mat = (renk, ek = {}) => {
