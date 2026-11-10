@@ -135,18 +135,54 @@ def durum(env_yolu=None):
     return {"tur": "kurulu", "surum": surum, "auth": _auth_var(), "model": test_modeli(env_yolu)}
 
 
+MODEL_DESENI = re.compile(r"^[a-z0-9][a-z0-9_-]*/[A-Za-z0-9._:-]+$")
+_YAP_CACHE = {"t": 0.0, "v": None}
+
+
+def yapilandirma(tazele=False):
+    """opencode.json'daki tanımlı sağlayıcı/modeller (anahtarlar dönmez). 60 sn önbellekli."""
+    simdi = time.time()
+    if not tazele and _YAP_CACHE["v"] is not None and simdi - _YAP_CACHE["t"] < 60:
+        return _YAP_CACHE["v"]
+    try:
+        sonuc = auth_islem({"islem": "yapilandirma"})
+    except ValueError:
+        sonuc = {"saglayicilar": [], "modeller": []}
+    _YAP_CACHE["v"], _YAP_CACHE["t"] = sonuc, simdi
+    return sonuc
+
+
 def _modeller_getir():
-    """`opencode models` çalıştırıp provider/model satırlarını döndürür (yavaş olabilir)."""
+    """`opencode models` + opencode.json tanımlı modelleri birleştirir."""
+    listeler, hatalar = [], []
     try:
         r = subprocess.run(_komut([exe(), "models"]), capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=90, env=_ortam())
-    except (OSError, subprocess.TimeoutExpired):
-        raise ValueError("opencode komutu çalıştırılamadı.") from None
-    if r.returncode != 0:
-        raise ValueError("Model listesi alınamadı (opencode kurulumu/oturumu?).")
-    desen = re.compile(r"^[a-z0-9-]+/[A-Za-z0-9._:-]+$")
-    liste = [s.strip() for s in (r.stdout or "").splitlines() if desen.match(s.strip())]
-    return list(dict.fromkeys(liste))[:300]
+        if r.returncode == 0:
+            listeler.append([s.strip() for s in (r.stdout or "").splitlines() if MODEL_DESENI.match(s.strip())])
+        else:
+            hatalar.append(_kisa_hata(r) or f"çıkış kodu {r.returncode}")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        hatalar.append(f"{type(e).__name__}")
+    cfg = yapilandirma(tazele=True)
+    listeler.append([m for m in (cfg.get("modeller") or []) if MODEL_DESENI.match(m)])
+    liste = list(dict.fromkeys([m for l in listeler for m in l]))
+    if not liste:
+        raise ValueError("Hiç model bulunamadı. opencode.json'da tanımlı sağlayıcı/model yok"
+                         + (f" ve `opencode models` başarısız: {hatalar[0]}" if hatalar else "") + ".")
+    return liste[:500]
+
+
+def saglayici_listesi():
+    """Kimlik doğrulaması yapılmış ya da yapılandırmada tanımlı sağlayıcılar: [{id, ad}]."""
+    adlar = {x.get("id"): x.get("ad") for x in (yapilandirma().get("saglayicilar") or []) if x.get("id")}
+    provs = {m.split("/", 1)[0] for m in (model_ozeti().get("modeller") or []) if "/" in m}
+    provs |= set(adlar)
+    try:
+        provs |= {x.get("id") for x in (auth_islem({"islem": "liste"}).get("saglayicilar") or []) if x.get("id")}
+    except ValueError:
+        pass
+    return [{"id": p, "ad": adlar.get(p)} for p in sorted(x for x in provs if x)]
 
 
 def _cache_oku():
@@ -280,7 +316,8 @@ def islem(veri, env_yolu=None):
     if i == "dene":
         return {**durum(env_yolu), "deneme": baglanti_dene(env_yolu)}
     if i == "modeller":
-        return {**durum(env_yolu), **modeller(tazele=bool(veri.get("tazele")))}
+        return {**durum(env_yolu), **modeller(tazele=bool(veri.get("tazele"))),
+                "saglayici_listesi": saglayici_listesi()}
     if i == "auth-liste":
         return auth_islem({"islem": "liste"})
     if i == "auth-ekle":

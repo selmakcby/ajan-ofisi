@@ -578,10 +578,12 @@ function opencodeFormu(kutu, d, yenile) {
   if (d.saglayicilar) listele(d.saglayicilar);
   else postJSON('/api/opencode', { islem:'auth-liste' }).then(({ durum, veri }) => { if (durum === 200) listele(veri.saglayicilar); }).catch(() => {});
 
-  // sağlayıcı + anahtar ekle
+  // sağlayıcı + anahtar ekle (sağlayıcı: yapılandırmadan gelen liste + serbest yazım)
   const f = el('form', 'tg-form');
-  const prov = el('input'); prov.type = 'text'; prov.placeholder = 'sağlayıcı (ör. openai)'; prov.autocomplete = 'off';
-  const dl = el('datalist'); dl.id = 'ocSaglayicilar'; OPENCODE_SAGLAYICILAR.forEach(x => { const o = el('option'); o.value = x; dl.append(o); });
+  const prov = el('input'); prov.type = 'text'; prov.placeholder = 'sağlayıcı kimliği (ör. myprovider)'; prov.autocomplete = 'off';
+  const dl = el('datalist'); dl.id = 'ocSaglayicilar';
+  (d.saglayici_listesi || []).forEach(x => { const o = el('option'); o.value = x.id; if (x.ad) o.label = x.ad; dl.append(o); });
+  OPENCODE_SAGLAYICILAR.forEach(x => { if (!(d.saglayici_listesi || []).some(y => y.id === x)) { const o = el('option'); o.value = x; dl.append(o); } });
   prov.setAttribute('list', 'ocSaglayicilar');
   const anahtar = el('input'); anahtar.type = 'password'; anahtar.placeholder = 'API anahtarı'; anahtar.autocomplete = 'off';
   const ekle = el('button', 'koyu', 'Kaydet'); ekle.type = 'submit';
@@ -593,7 +595,8 @@ function opencodeFormu(kutu, d, yenile) {
     if (!s || !a) return yaz('Sağlayıcı ve anahtar gerekli.', true);
     gonder({ islem:'auth-ekle', saglayici:s, anahtar:a }, ekle);
   };
-  kutu.append(el('h3', null, 'Sağlayıcı ekle'), el('p', 'tg-not', 'Anahtar tarayıcıya geri gönderilmez; sunucuda yalnız opencode kimlik deposuna yazılır.'), f);
+  kutu.append(el('h3', null, 'Sağlayıcı ekle'),
+    el('p', 'tg-not', 'Sağlayıcı adı opencode.json’daki anahtardır (ör. myprovider), görünen adı değil (ör. evren). Anahtar tarayıcıya geri gönderilmez.'), f);
 
   async function gonder(govde, btn) {
     btn.disabled = true; yaz(govde.islem === 'dene' ? 'Deneniyor…' : 'İşleniyor…');
@@ -602,7 +605,12 @@ function opencodeFormu(kutu, d, yenile) {
     if (durum !== 200) return yaz(veri.hata || 'İşlem yapılamadı.', true);
     if (veri.deneme) return yaz(`Bağlantı çalışıyor: "${veri.deneme.yanit}" (${veri.deneme.model})`);
     if (veri.saglayicilar) { listele(veri.saglayicilar); return yaz('Kaydedildi.'); }
-    if (veri.modeller) { const liste = (veri.modeller || {}).modeller || []; return yaz(liste.length ? `${liste.length} model önbelleğe alındı.` : 'Model bulunamadı.'); }
+    if (veri.modeller) {
+      const liste = (veri.modeller || {}).modeller || [];
+      if (!liste.length) return yaz('Hiç model bulunamadı. opencode.json’da sağlayıcı/model tanımlı mı ve "Tanılama" ne diyor?', true);
+      const provs = [...new Set(liste.map(m => m.split('/')[0]))];
+      return yaz(`${liste.length} model (${provs.join(', ')}) önbelleğe alındı. Ajan formunda combobox’tan seçebilirsin.`);
+    }
     yenile(veri);
   }
 

@@ -54,6 +54,38 @@ def _saglayici(veri):
     return s.strip()
 
 
+def _config_yollari():
+    home = os.path.expanduser("~")
+    return [os.path.join(home, ".config", "opencode", "opencode.json"),
+            os.path.join(home, ".config", "opencode", "opencode.jsonc")]
+
+
+def _yapilandirma():
+    """opencode.json'daki tanımlı sağlayıcı ve modelleri okur (anahtar/baseURL döndürülmez)."""
+    for yol in _config_yollari():
+        try:
+            with open(yol, encoding="utf-8") as f:
+                metin = f.read()
+        except (FileNotFoundError, OSError):
+            continue
+        metin = __import__("re").sub(r"^\s*//.*$", "", metin, flags=__import__("re").M)  # jsonc yorumları
+        try:
+            veri = json.loads(metin)
+        except json.JSONDecodeError:
+            continue
+        saglayicilar, modeller = [], []
+        for sid, s in ((veri or {}).get("provider") or {}).items():
+            if not isinstance(sid, str) or not SAGLAYICI_DESENI.match(sid):
+                continue
+            ad = s.get("name") if isinstance(s, dict) else None
+            saglayicilar.append({"id": sid, "ad": ad if isinstance(ad, str) else None})
+            for mid in ((s or {}).get("models") or {}):
+                if isinstance(mid, str) and mid:
+                    modeller.append(f"{sid}/{mid}")
+        return {"saglayicilar": saglayicilar, "modeller": modeller}
+    return {"saglayicilar": [], "modeller": []}
+
+
 def main():
     try:
         veri = json.loads(sys.stdin.read() or "{}")
@@ -61,6 +93,8 @@ def main():
         if islem == "liste":
             sonuc = {"saglayicilar": [{"id": k, "tur": (v or {}).get("type") if isinstance(v, dict) else None}
                                       for k, v in _oku().items()]}
+        elif islem == "yapilandirma":
+            sonuc = _yapilandirma()
         elif islem == "ekle":
             s = _saglayici(veri)
             anahtar = veri.get("anahtar")

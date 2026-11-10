@@ -764,7 +764,8 @@ class Isleyici(SimpleHTTPRequestHandler):
         if yol.path == "/api/claude":
             return self._json(200, claude_baglanti.durum())
         if yol.path == "/api/opencode":
-            return self._json(200, {**opencode_baglanti.durum(), **opencode_baglanti.model_ozeti()})
+            return self._json(200, {**opencode_baglanti.durum(), **opencode_baglanti.model_ozeti(),
+                                    "saglayici_listesi": opencode_baglanti.saglayici_listesi()})
         if yol.path == "/api/terminaller":
             return self._json(200, {"terminaller": KOPRU.liste()})
         if yol.path == "/api/olaylar":
