@@ -1501,13 +1501,14 @@ function kediYuru(a, t) {
   }
   // miyav balonu: yalnız eğlence odasında, yerine varmışken
   const sc = a.olcek;
-  if (!a.yol && ((a.yerAnahtar.startsWith('eg:') && !gece) || a.yerAnahtar === 'tp:ceo')) { // toplantıda yalnız CEO miyavlar
+  const balonSprite = a.balon && a.balon.isSprite; // sprite yoksa sahne çökmesin
+  if (balonSprite && !a.yol && ((a.yerAnahtar.startsWith('eg:') && !gece) || a.yerAnahtar === 'tp:ceo')) { // toplantıda yalnız CEO miyavlar
     if (t > a.balonT) {
       if (a.balon.visible) { a.balon.visible = false; a.balonT = t + sonrakiBalon(Math.random()); }
       else { a.balon.material.map = balonDoku(balonMetni(Math.random()), tuvalDoku); a.balon.material.needsUpdate = true; a.balon.visible = true; a.balonT = t + 2.4; }
     }
     a.balon.position.set(k.position.x, k.position.y + 1.65 * sc, k.position.z);
-  } else a.balon.visible = false;
+  } else if (balonSprite) a.balon.visible = false;
 }
 // panel avatarları: her ajanın kendi kedisi, meme pozunda (açılışta bir kez)
 const PORTRE = portreleriUret(AJANLAR, {
@@ -1998,7 +1999,7 @@ async function ceoyaSor(metin) {
   SES.tik(); akisEkle('ceo', SEN + ' → CEO: ' + kisa(temiz, 120));
   ceoBekliyor = true; $('komutGonder').disabled = true;
   const ceo = ajanBul('ceo');
-  if (ceo) { Object.assign(ceo, { durum:'dusunuyor', is:'seni dinliyor', eylem:'düşünüyor…', t0:Date.now(), balon:null }); ceo.yuzMat.map = YUZ.acik; cekirdek.dusun = true; ekranYenile(ceo); ustGuncelle(); }
+  if (ceo) { Object.assign(ceo, { durum:'dusunuyor', is:'seni dinliyor', eylem:'düşünüyor…', t0:Date.now(), balonMetin:null }); ceo.yuzMat.map = YUZ.acik; cekirdek.dusun = true; ekranYenile(ceo); ustGuncelle(); }
   try {
     if (DEMO) await demo.ceo(temiz);
     else {
