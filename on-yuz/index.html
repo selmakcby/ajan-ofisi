@@ -92,7 +92,7 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 @keyframes kaygir{from{transform:translateY(-6px)}to{transform:none}}
 .akis li .avatar{margin-top:1px}
 .akis li div{min-width:0}
-.akis li p{font-size:13px;line-height:1.38}
+.akis li p{font-size:13px;line-height:1.38;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .akis li small{display:block;font-size:11.5px;color:#a3978a;margin-top:2px}
 .akis li.ok p{color:var(--mercan-k);font-weight:600}
 .akis li.hafiza p{color:#8a5a14;font-weight:600}
@@ -174,6 +174,14 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 .sayfa .alt{font-size:13px;color:var(--soluk);margin:4px 0 18px;line-height:1.45}
 .izgara{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
 .izgara .kart p{-webkit-line-clamp:4}
+/* tıklayınca tam metin: kart ve akış satırı büyür, kırpma kalkar */
+.kart,.akis li{cursor:zoom-in}
+.kart.genis,.akis li.genis{cursor:zoom-out}
+.kart.genis{background:#fff;border-color:rgba(255,122,89,.4);box-shadow:0 6px 22px rgba(90,70,50,.14)}
+.kart.genis p,.izgara .kart.genis p,.kart.genis h4{display:block;-webkit-line-clamp:unset;overflow:auto;max-height:46vh}
+.kart.genis .ust{position:sticky;top:0;background:#fff;z-index:1}
+.akis li.genis{align-items:flex-start}
+.akis li.genis p{display:block;overflow:auto;max-height:38vh;white-space:pre-wrap}
 .izgara .kart ul{list-style:none;margin-top:6px;display:flex;flex-direction:column;gap:5px}
 .izgara .kart li{font-size:12.5px;line-height:1.4;color:#5d5348;padding-left:10px;position:relative}
 .izgara .kart li::before{content:"";position:absolute;left:0;top:7px;width:4px;height:4px;border-radius:50%;background:var(--mercan)}
@@ -248,7 +256,7 @@ td.sayi,th.sayi{text-align:right}
 .token-kart .tk-ince+.tk-ince{color:var(--soluk);margin-top:2px}
 .token-kart .tk-ince abbr{text-decoration:underline dotted rgba(59,52,44,.35);cursor:help}
 .etiket3d .sap{position:absolute;left:50%;top:100%;width:1px;background:rgba(59,52,44,.35);height:0}
-.etiket3d .balon{white-space:normal;width:300px;font-size:12.5px;line-height:1.42;color:var(--murekkep);background:#fff7ee;border-radius:8px;padding:8px 10px;margin-top:6px;border:1px solid rgba(255,122,89,.35)}
+.etiket3d .balon{white-space:normal;width:300px;font-size:12.5px;line-height:1.42;color:var(--murekkep);background:#fff7ee;border-radius:8px;padding:8px 10px;margin-top:6px;border:1px solid rgba(255,122,89,.35);max-height:40vh;overflow:auto}
 .oda-ad{position:absolute;left:0;top:0;pointer-events:none;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:#4a4137;white-space:nowrap;will-change:transform;text-shadow:0 1px 0 rgba(255,255,255,.7)}
 .oda-ad small{display:block;font-family:Inter,sans-serif;font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;color:#8a7f72;margin-top:1px}
 
@@ -1627,6 +1635,7 @@ function avatar(ajanId, sinif = '') {
 }
 function akisEkle(ajanId, metin, alt = '', tip = '', zaman = new Date()) {
   const li = el('li', tip);
+  li.title = 'Tam metin için tıkla';
   const d = el('div'); d.append(el('p', null, metin), el('small', null, [ajanBul(ajanId)?.ad, saatYazi(zaman), alt].filter(Boolean).join(' · ')));
   li.append(avatar(ajanId), d);
   const ul = $('akis'); ul.prepend(li);
@@ -1638,6 +1647,17 @@ const ONAY_ANAHTAR = 'ajan-ofisi-onaylar';
 const onaylar = (() => { try { return new Set(JSON.parse(localStorage.getItem(ONAY_ANAHTAR) || '[]')); } catch { return new Set(); } })();
 const onayKaydet = () => { try { localStorage.setItem(ONAY_ANAHTAR, JSON.stringify([...onaylar].slice(-200))); } catch { /* tarayıcı depolaması yoksa yalnız bu oturumda */ } };
 let kartlar = [];
+// Kart / akış satırına tıklayınca tam metni göster (kırpmayı kaldır). Düğme/form içine tıklama sayılmaz.
+function genisletKur(kok) {
+  if (!kok) return;
+  kok.addEventListener('click', e => {
+    if (e.target.closest('button, a, textarea, input, select, label')) return;
+    const hedef = e.target.closest('.kart, .akis li');
+    if (!hedef) return;
+    hedef.classList.toggle('genis');
+  });
+}
+genisletKur($('kartlar')); genisletKur($('akis')); genisletKur($('sayfa'));
 const terminaller = new Map();               // canlı terminal köprüsü: oturum_adi -> {ajan, durum, son_arac, son_hedef, pencere_adi}
 const temizMetin = s => String(s || '').replace(/[#*`>_|]/g, ' ').replace(/\s+/g, ' ').trim();
 function kartEkle(o) {
@@ -1656,6 +1676,7 @@ function kartlariCiz() {
   kok.replaceChildren(...sirali.slice(0, 5).map(k => {
     const a = ajanBul(k.ajan);
     const kart = el('div', 'kart' + (k.sonra ? ' sonra-k' : ''));
+    kart.title = 'Tam metin için tıkla';
     const ust = el('div', 'ust'); ust.append(avatar(k.ajan), document.createTextNode((a?.ad || k.ajan) + ' · ' + (k.zaman ? saatYazi(new Date(k.zaman)) : '') + (k.sure ? ' · ' + Math.round(k.sure) + ' sn' : '')));
     const dug = el('div', 'dugmeler');
     const onayB = el('button', 'onay', 'Onayla'); const sonraB = el('button', 'sonra', 'Sonra');
@@ -1818,7 +1839,7 @@ function olayIsle(o) {
     ceo_bitti() {
       if (o.durum === 'hata') { if (!tekrar) akisEkle('ceo', 'CEO geçerli bir plan çıkaramadı, koşu başlatılmadı', '', '', zaman); }
       else {
-        akisEkle('ceo', 'CEO: ' + kisa(o.cevap || '', 140), '', '', zaman);
+        akisEkle('ceo', 'CEO: ' + (o.cevap || ''), '', '', zaman);
         (o.reddedilen || []).forEach(r => akisEkle(r.ajan, 'CEO atamadı: ' + (ajanBul(r.ajan)?.ad || r.ajan) + ' · ' + (r.neden || ''), '', '', zaman));
       }
       if (tekrar || !a) return;
