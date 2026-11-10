@@ -281,13 +281,18 @@ def teshis():
         bilgi["auth"] = [x.get("id") for x in (l.get("saglayicilar") or [])]
     except ValueError as e:
         bilgi["auth"] = f"okunamadı: {e}"
+    try:
+        cfg = auth_islem({"islem": "yapilandirma"})
+        bilgi["yapilandirma"] = cfg
+    except ValueError as e:
+        bilgi["yapilandirma"] = {"hata": str(e)}
     return bilgi
 
 
 def _auth_helper_komut():
     """Kimlik deposunu yöneten yardımcı betiği çalıştıracak komut (sunucuda sudo ile ajan)."""
     if ortak.SUNUCU:
-        # HOME korunur: auth.json ajanın ev dizininde (/veri/ev-ajan) olsun.
+        # HOME korunur: auth.json ve opencode.json ajanın ev dizininde olsun.
         return ["sudo", "-n", "-u", "ajan", "--preserve-env=HOME", "--", "python3",
                 "/uygulama/docker/opencode_auth.py"]
     return [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "docker", "opencode_auth.py")]
@@ -328,4 +333,11 @@ def islem(veri, env_yolu=None):
         return {"tamam": True, **auth_islem({"islem": "liste"})}
     if i == "teshis":
         return teshis()
+    if i == "config-yaz":
+        metin = veri.get("metin")
+        if not isinstance(metin, str):
+            raise ValueError("Yapılandırma metni gerekli.")
+        sonuc = auth_islem({"islem": "config-yaz", "metin": metin})
+        _YAP_CACHE["v"] = None  # önbelleği geçersiz kıl
+        return {**sonuc, **yapilandirma(tazele=True)}
     raise ValueError("bilinmeyen işlem")

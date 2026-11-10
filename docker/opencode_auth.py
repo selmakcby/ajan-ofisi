@@ -62,7 +62,8 @@ def _config_yollari():
 
 def _yapilandirma():
     """opencode.json'daki tanımlı sağlayıcı ve modelleri okur (anahtar/baseURL döndürülmez)."""
-    for yol in _config_yollari():
+    yollar = _config_yollari()
+    for yol in yollar:
         try:
             with open(yol, encoding="utf-8") as f:
                 metin = f.read()
@@ -72,7 +73,8 @@ def _yapilandirma():
         try:
             veri = json.loads(metin)
         except json.JSONDecodeError:
-            continue
+            return {"saglayicilar": [], "modeller": [], "yol": yol, "var": True,
+                    "hata": "JSON çözümlenemedi"}
         saglayicilar, modeller = [], []
         for sid, s in ((veri or {}).get("provider") or {}).items():
             if not isinstance(sid, str) or not SAGLAYICI_DESENI.match(sid):
@@ -82,8 +84,50 @@ def _yapilandirma():
             for mid in ((s or {}).get("models") or {}):
                 if isinstance(mid, str) and mid:
                     modeller.append(f"{sid}/{mid}")
-        return {"saglayicilar": saglayicilar, "modeller": modeller}
-    return {"saglayicilar": [], "modeller": []}
+        return {"saglayicilar": saglayicilar, "modeller": modeller, "yol": yol, "var": True}
+    return {"saglayicilar": [], "modeller": [], "yol": yollar[0], "var": False}
+
+
+MAKS_CONFIG = 200_000
+
+
+def _config_yaz(metin):
+    """Yönetici tarafından verilen opencode.json içeriğini ajanın ev dizinine atomik yazar."""
+    if not isinstance(metin, str) or not metin.strip():
+        raise ValueError("Yapılandırma boş.")
+    if len(metin) > MAKS_CONFIG:
+        raise ValueError("Yapılandırma çok büyük.")
+    try:
+        veri = json.loads(metin)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Geçersiz JSON: satır {e.lineno}, sütun {e.colno}")
+    if not isinstance(veri, dict):
+        raise ValueError("Yapılandırma bir JSON nesnesi olmalı.")
+    if "provider" in veri and not isinstance(veri["provider"], dict):
+        raise ValueError("'provider' bir nesne olmalı.")
+    yol = _config_yollari()[0]
+    os.makedirs(os.path.dirname(yol), exist_ok=True)
+    if os.path.exists(yol):
+        try:
+            with open(yol, "rb") as f:
+                eski = f.read()
+            with open(yol + ".bak", "wb") as f:
+                f.write(eski)
+        except OSError:
+            pass
+    fd, gecici = tempfile.mkstemp(dir=os.path.dirname(yol), prefix=".cfg-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(veri, f, ensure_ascii=False, indent=2)
+        os.chmod(gecici, 0o644)
+        os.replace(gecici, yol)
+    finally:
+        if os.path.exists(gecici):
+            try:
+                os.remove(gecici)
+            except OSError:
+                pass
+    return {"tamam": True, "yol": yol}
 
 
 def main():
@@ -95,6 +139,8 @@ def main():
                                       for k, v in _oku().items()]}
         elif islem == "yapilandirma":
             sonuc = _yapilandirma()
+        elif islem == "config-yaz":
+            sonuc = _config_yaz(veri.get("metin") if isinstance(veri.get("metin"), str) else veri.get("json"))
         elif islem == "ekle":
             s = _saglayici(veri)
             anahtar = veri.get("anahtar")

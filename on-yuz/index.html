@@ -598,12 +598,31 @@ function opencodeFormu(kutu, d, yenile) {
   kutu.append(el('h3', null, 'Sağlayıcı ekle'),
     el('p', 'tg-not', 'Sağlayıcı adı opencode.json’daki anahtardır (ör. myprovider), görünen adı değil (ör. evren). Anahtar tarayıcıya geri gönderilmez.'), f);
 
+  // opencode.json yapılandırması (sunucuda dosya yoksa buradan yapıştır)
+  const cfgYol = (d.yapilandirma || {}).yol || '-';
+  kutu.append(el('h3', null, 'Yapılandırma (opencode.json)'),
+    el('p', 'tg-not', `Dosya: ${cfgYol} · ${(d.yapilandirma || {}).var ? 'var' : 'yok'}` +
+      ((d.yapilandirma || {}).modeller?.length ? ` · ${d.yapilandirma.modeller.length} model tanımlı` : '')));
+  const cfgF = el('form', 'tg-form'); cfgF.style.display = 'block';
+  const cfg = el('textarea'); cfg.maxLength = 200000;
+  cfg.placeholder = '{\n  "provider": {\n    "myprovider": { "npm": "@ai-sdk/openai-compatible", "options": { "baseURL": "https://..." }, "models": { "deepseek-v4.1-flash": {} } }\n  }\n}';
+  cfg.rows = 8; cfg.style.width = '100%'; cfg.style.fontFamily = 'ui-monospace, Menlo, monospace'; cfg.style.fontSize = '12px';
+  const yazCfg = el('button', 'koyu', 'Yapılandırmayı kaydet'); yazCfg.type = 'submit';
+  cfgF.append(cfg, yazCfg);
+  cfgF.onsubmit = e => {
+    e.preventDefault();
+    if (!cfg.value.trim()) return yaz('Yapılandırma boş.', true);
+    gonder({ islem:'config-yaz', metin:cfg.value }, yazCfg);
+  };
+  kutu.append(cfgF);
+
   async function gonder(govde, btn) {
     btn.disabled = true; yaz(govde.islem === 'dene' ? 'Deneniyor…' : 'İşleniyor…');
     const { durum, veri } = await postJSON('/api/opencode', govde).catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
     btn.disabled = false;
     if (durum !== 200) return yaz(veri.hata || 'İşlem yapılamadı.', true);
     if (veri.deneme) return yaz(`Bağlantı çalışıyor: "${veri.deneme.yanit}" (${veri.deneme.model})`);
+    if (veri.tamam && veri.yol) { yaz('Yapılandırma kaydedildi: ' + veri.yol + (veri.modeller?.length ? ` (${veri.modeller.length} model)` : '')); return; }
     if (veri.saglayicilar) { listele(veri.saglayicilar); return yaz('Kaydedildi.'); }
     if (veri.modeller) {
       const liste = (veri.modeller || {}).modeller || [];
@@ -623,7 +642,8 @@ function opencodeFormu(kutu, d, yenile) {
     const c = veri.calistirma || {};
     yaz(`Yol: ${veri.yol || 'bulunamadı'} · mevcut: ${veri.mevcut ? 'evet' : 'hayır'} · sürüm: ${veri.surum || '-'}` +
       (c.hata ? ` · hata: ${c.hata}` : '') +
-      ` · cwd: ${veri.cwd} · auth: ${Array.isArray(veri.auth) ? (veri.auth.join(', ') || 'yok') : veri.auth}`);
+      ` · cwd: ${veri.cwd} · auth: ${Array.isArray(veri.auth) ? (veri.auth.join(', ') || 'yok') : veri.auth}` +
+      ` · config: ${(veri.yapilandirma || {}).var ? ((veri.yapilandirma || {}).yol + ` (${((veri.yapilandirma || {}).modeller || []).length} model)`) : 'yok (' + ((veri.yapilandirma || {}).yol || '-') + ')'}`);
   };
   if (d.tur === 'kurulu') {
     const t = el('button', 'dugme', 'Bağlantıyı dene'); t.type = 'button'; t.onclick = () => gonder({ islem:'dene' }, t); alt.append(t);

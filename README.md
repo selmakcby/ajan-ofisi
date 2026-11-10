@@ -79,8 +79,12 @@ docker compose logs ofis                             # ilk açılışta KURULUM 
   limite takıldığında (`usage limit`, `429`, `rate limit` vb.) aynı görev opencode ile **bir kez** otomatik yeniden
   denenir; koşu günlüğüne ve olay akışına "yedek sağlayıcı" notu düşer. Yedek model/ düşünme gücü ayrıca ayarlanır.
 - **Opencode sorun giderme:** paneldeki **Tanılama** düğmesi opencode yolunu, sürümü, çalıştırma hatasını (gerçek
-  stderr) ve kimlik deposundaki sağlayıcıları gösterir. `opencode` PATH'te yoksa bilinen kurulum yerleri
-  (`/usr/local/bin`, `/usr/bin`, `/opt/opencode/bin`) da denenir.
+  stderr), kimlik deposundaki sağlayıcıları ve **opencode.json** yolunu/durumunu gösterir. `opencode` PATH'te yoksa
+  bilinen kurulum yerleri (`/usr/local/bin`, `/usr/bin`, `/opt/opencode/bin`) da denenir.
+- **Opencode yapılandırması:** Panelin *Yapılandırma* bölümüne `opencode.json` içeriğini yapıştırıp kaydedebilirsin;
+  dosya ajanın ev dizinine (`<HOME>/.config/opencode/opencode.json`) atomik yazılır ve öncekinin yedeği alınır.
+  Model listesi hem `opencode models` çıktısından hem bu dosyadaki `provider.<id>.models` tanımlarından okunur —
+  böylece özel/uyumlu sağlayıcılar (ör. `myprovider`) de listede görünür.
 - **Veriler** tek bir Docker volume'unda (`ofis-veri` → `/veri`): hesap, ajanlar, hafıza, çıktılar, ayarlar,
   `CLAUDE.md` (sunucuda düzenlenebilir) ve Claude oturum kayıtları. Güncelleme: `git pull && docker compose up -d
   --build` (veri kalır). Yedek: `docker run --rm -v ajan-ofisi_ofis-veri:/veri -v "$PWD":/yedek alpine tar czf
