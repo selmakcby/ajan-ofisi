@@ -455,7 +455,7 @@ def bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini, kaynak=N
         "session_id": session_id, "kaynak": kaynak,
         "soru": soru["soru"] if soru else None, "soru_tur": soru["tur"] if soru else None,
         **baglam, "tur": "kosu_bitti", "durum": "basarili" if basarili else "hata",
-        "sure_sn": sure, "ozet": temiz[:400], "hata": hata,
+        "sure_sn": sure, "ozet": temiz[:20000], "hata": hata,
         "kullanim": (sonuc or {}).get("usage"),
         "maliyet_usd": (sonuc or {}).get("total_cost_usd"),
         "tur_sayisi": (sonuc or {}).get("num_turns"),
@@ -468,7 +468,7 @@ def bitir(ajan, baglam, sonuc, hata, baslangic, log_yolu, cikti_dizini, kaynak=N
     durum = "cevap_bekliyor" if soru else ("bitti" if basarili else "hata")
     ortak.durum_yaz(ajan["id"], {"durum": durum, "kosu_id": baglam["kosu_id"],
                                  "pid": None, "bitis": ortak.simdi_iso(), "bitis_ts": time.time(),
-                                 "sure_sn": sure, "ozet": temiz[:400], "hata": hata,
+                                 "sure_sn": sure, "ozet": temiz[:20000], "hata": hata,
                                  "maliyet_usd": olay["maliyet_usd"], "cikti": olay["cikti"],
                                  "session_id": session_id, "soru": olay["soru"], "soru_tur": olay["soru_tur"]})
     ortak.olay_yaz(olay)

@@ -182,6 +182,18 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 .kart.genis .ust{position:sticky;top:0;background:#fff;z-index:1}
 .akis li.genis{align-items:flex-start}
 .akis li.genis p{display:block;overflow:auto;max-height:38vh;white-space:pre-wrap}
+/* tam ekran okuyucu */
+.okuyucu{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;padding:24px;background:rgba(48,40,32,.42);backdrop-filter:blur(3px)}
+.okuyucu.acik{display:flex}
+.okuyucu .kutu-o{width:min(860px,94vw);max-height:88vh;display:flex;flex-direction:column;background:#fffdf8;border-radius:16px;box-shadow:0 24px 70px rgba(60,45,30,.35);overflow:hidden}
+.okuyucu .bas-o{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid rgba(59,52,44,.1);flex:none}
+.okuyucu .bas-o h3{margin:0;font-family:"Space Grotesk",sans-serif;font-size:15px;font-weight:600;flex:1;min-width:0}
+.okuyucu .kapat-o{width:30px;height:30px;border-radius:8px;background:rgba(59,52,44,.06);font-size:16px;line-height:1;flex:none}
+.okuyucu .kapat-o:hover{background:rgba(59,52,44,.12)}
+.okuyucu .metin-o{padding:16px 18px;overflow:auto;white-space:pre-wrap;font-size:14px;line-height:1.55;color:#3f382f;flex:1 1 auto}
+.okuyucu .alt-o{display:flex;gap:8px;padding:12px 18px;border-top:1px solid rgba(59,52,44,.1);flex:none;justify-content:flex-end}
+.okuyucu .alt-o .onay{background:var(--murekkep);color:#fff7ee;font-size:13px;font-weight:600;padding:8px 16px;border-radius:9px}
+.okuyucu .alt-o .sonra{font-size:13px;font-weight:500;padding:8px 14px;border-radius:9px;border:1px solid rgba(59,52,44,.18)}
 .izgara .kart ul{list-style:none;margin-top:6px;display:flex;flex-direction:column;gap:5px}
 .izgara .kart li{font-size:12.5px;line-height:1.4;color:#5d5348;padding-left:10px;position:relative}
 .izgara .kart li::before{content:"";position:absolute;left:0;top:7px;width:4px;height:4px;border-radius:50%;background:var(--mercan)}
@@ -1647,14 +1659,43 @@ const ONAY_ANAHTAR = 'ajan-ofisi-onaylar';
 const onaylar = (() => { try { return new Set(JSON.parse(localStorage.getItem(ONAY_ANAHTAR) || '[]')); } catch { return new Set(); } })();
 const onayKaydet = () => { try { localStorage.setItem(ONAY_ANAHTAR, JSON.stringify([...onaylar].slice(-200))); } catch { /* tarayıcı depolaması yoksa yalnız bu oturumda */ } };
 let kartlar = [];
-// Kart / akış satırına tıklayınca tam metni göster (kırpmayı kaldır). Düğme/form içine tıklama sayılmaz.
+// Tam ekran okuyucu: uzun cevapları kırpmadan göster (akış, kart, soru).
+const OKUYUCU = (() => {
+  const kat = el('div', 'okuyucu');
+  const kutu = el('div', 'kutu-o'), bas = el('div', 'bas-o'), metin = el('div', 'metin-o'), alt = el('div', 'alt-o');
+  const kapat = el('button', 'kapat-o', '×');
+  bas.append(el('h3', null, ''), kapat); kutu.append(bas, metin, alt); kat.append(kutu); document.body.append(kat);
+  const kapatFn = () => { kat.classList.remove('acik'); metin.textContent = ''; alt.replaceChildren(); };
+  kapat.onclick = kapatFn;
+  kat.addEventListener('click', e => { if (e.target === kat) kapatFn(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && kat.classList.contains('acik')) kapatFn(); });
+  return {
+    acik: () => kat.classList.contains('acik'),
+    goster(baslik, icerikMetni, dugmeler = []) {
+      bas.querySelector('h3').textContent = baslik || '';
+      metin.textContent = icerikMetni || '(metin yok)';
+      alt.replaceChildren(...dugmeler);
+      kat.classList.add('acik'); metin.scrollTop = 0;
+    },
+    kapat: kapatFn,
+  };
+})();
+function metinOku(baslik, icerikMetni, dugmeler) { OKUYUCU.goster(baslik, icerikMetni, dugmeler); }
+// Kart / akış satırına tıklayınca içeriği tam ekran okuyucuda göster.
 function genisletKur(kok) {
   if (!kok) return;
   kok.addEventListener('click', e => {
     if (e.target.closest('button, a, textarea, input, select, label')) return;
-    const hedef = e.target.closest('.kart, .akis li');
-    if (!hedef) return;
-    hedef.classList.toggle('genis');
+    const kart = e.target.closest('.kart');
+    if (kart && kart.dataset.kosu) {
+      const k = kartlar.find(x => x.kosu_id === kart.dataset.kosu);
+      if (k) return kartOku(k);
+    }
+    const satir = e.target.closest('.akis li, .kart');
+    if (!satir) return;
+    const p = satir.querySelector('p, h4');
+    const baslik = satir.querySelector('h4')?.textContent || satir.querySelector('small')?.textContent || 'Cevap';
+    metinOku(baslik, p ? p.textContent : satir.textContent, []);
   });
 }
 genisletKur($('kartlar')); genisletKur($('akis')); genisletKur($('sayfa'));
@@ -1677,6 +1718,7 @@ function kartlariCiz() {
     const a = ajanBul(k.ajan);
     const kart = el('div', 'kart' + (k.sonra ? ' sonra-k' : ''));
     kart.title = 'Tam metin için tıkla';
+    kart.dataset.kosu = k.kosu_id;
     const ust = el('div', 'ust'); ust.append(avatar(k.ajan), document.createTextNode((a?.ad || k.ajan) + ' · ' + (k.zaman ? saatYazi(new Date(k.zaman)) : '') + (k.sure ? ' · ' + Math.round(k.sure) + ' sn' : '')));
     const dug = el('div', 'dugmeler');
     const onayB = el('button', 'onay', 'Onayla'); const sonraB = el('button', 'sonra', 'Sonra');
@@ -1687,6 +1729,14 @@ function kartlariCiz() {
     return kart;
   }));
   ustGuncelle();
+}
+function kartOku(k) {
+  const a = ajanBul(k.ajan);
+  const onayB = el('button', 'onay', 'Onayla');
+  const sonraB = el('button', 'sonra', 'Sonra');
+  onayB.onclick = () => { SES.tik(); kartOnayla(k); OKUYUCU.kapat(); };
+  sonraB.onclick = () => { SES.tik(); k.sonra = true; kartlariCiz(); OKUYUCU.kapat(); };
+  metinOku('Gözden geçir: ' + (a?.ad || k.ajan) + ' çıktısı', k.ozet || '(özet yok)', [onayB, sonraB]);
 }
 function kartOnayla(k) {
   k.onay = true; onaylar.add(k.kosu_id); onayKaydet();
