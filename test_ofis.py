@@ -776,7 +776,8 @@ def test_ajan_ekle_guncelle_sil(tmp):
     import ajan_yonetimi as ay
     _ajanlar(tmp)
     a = ay.ajan_ekle({"ad": "Blog Yazarı", "yeni_oda": {"ad": "Yazı Masası", "tema": "yazi"}, "aciklama": "Taslak yazar."})
-    assert a["id"] == "blog-yazari" and a["izinli_araclar"] == ["Read", "Glob", "Grep"]
+    assert a["id"] == "blog-yazari"
+    assert set(["Read", "Write", "Bash", "WebSearch"]) <= set(a["izinli_araclar"])  # genel yetenek seti
     assert a["ne_zaman"] == "istek" and a["ne_zaman_metin"] == "İstek gelince"
     _, tablo = ortak.ajanlari_yukle()
     assert tablo["blog-yazari"]["kurulu"]  # calisma/blog-yazari oluşturuldu
@@ -1047,7 +1048,7 @@ def test_ajan_uclari(tmp):
         assert "cwd" not in next(x for x in liste["ajanlar"] if x["id"] == a["id"])
         assert any(o["id"] == "muhasebe" for o in liste["odalar"])
         ayrinti = s.istek("GET", f"/api/ajanlar/{a['id']}")[1]
-        assert "cwd" in ayrinti and ayrinti["yetkiler"] == ["okuma"]
+        assert "cwd" in ayrinti and "okuma" in ayrinti["yetkiler"] and "komut" in ayrinti["yetkiler"]
         assert s.istek("GET", "/api/ajanlar/olmayan")[0] == 404
         d, g, _ = s.istek("POST", "/api/ajanlar", {"islem": "guncelle", "id": a["id"], "ajan": {"model": "haiku"}})
         assert d == 200 and g["model"] == "haiku"
@@ -1483,13 +1484,16 @@ def test_kosu_modu():
 
 
 def test_sunucu_araclari():
-    giris = ["Read", "Bash", "WebFetch", "Bash(rm -rf:*)", "Bash(git diff:*)", "Bash(curl:*)"]
+    # Kullanıcı kararı: sunucuda serbest geliştirme Bash'i. Yasaklar ayrıca uygulanır.
+    giris = ["Read", "Bash", "WebFetch"]
     sonuc = ortak.sunucu_araclari(giris)
-    assert sonuc[:2] == ["Read", "WebFetch"] or sonuc[0] == "Read"
-    assert "Bash" not in sonuc and "Bash(rm -rf:*)" not in sonuc and "Bash(curl:*)" not in sonuc
-    assert set(ortak.SUNUCU_BASH) <= set(sonuc) and len(sonuc) == len(set(sonuc))
-    assert ortak.SUNUCU_BASH == ["Bash(ls:*)"]                       # kullanıcı kararı: sunucuda yalnız ls
-    assert ortak.sunucu_araclari(["Read", "Bash(git log:*)", "Bash(npm test:*)"]) == ["Read"]
+    assert sonuc == ["Read", "Bash", "WebFetch"]
+    assert ortak.SUNUCU_BASH == ["Bash"]
+    assert ortak.sunucu_araclari(["Read", "Bash(git log:*)", "Bash(npm test:*)"]) == [
+        "Read", "Bash(git log:*)", "Bash(npm test:*)"]
+    # yasaklar her zaman korunur
+    y = ortak.yasakli_araclar({})
+    assert "Bash(rm:*)" in y and "Bash(git push:*)" in y and "Read(**/.env)" in y
 
 
 def test_sunucu_yasaklari():
@@ -1527,7 +1531,7 @@ def test_sunucu_komut_sudo():
         for d in ("HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
             assert d in k[4]
         izinli = k[k.index("--allowedTools") + 1:k.index("--disallowedTools")]
-        assert "Bash" not in izinli and izinli[-1] == "Bash(ls:*)" and "Bash(git status:*)" not in izinli
+        assert "Bash" in izinli and "Read" in izinli  # serbest gelistirme (kullanici karari)
         o = kosucu.ajan_ortami()
         assert o["HOME"] == os.path.join(ortak.VERI, "ev-ajan") and o["DISABLE_AUTOUPDATER"] == "1"
 

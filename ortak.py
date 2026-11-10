@@ -100,7 +100,7 @@ def yasakli_araclar(veri):
 # ---------- sunucu modu: kısıtlı ajanlar ----------
 # Serbest Bash yok: kandırılmış bir ajan anahtarı/dosyaları okuyup dışarı sızdıramasın. Kullanıcı kararı: yalnız ls
 # (git/test komutları ajanın kendi yazdığı kodu çalıştırabildiği için kapalı).
-SUNUCU_BASH = ["Bash(ls:*)"]
+SUNUCU_BASH = ["Bash"]  # serbest gelistirme (kullanici karari); rm/push/curl/env .env yine yasak
 # Claude Code izin kurallarında mutlak yol "//" ile yazılır. /proc: süreç ortamından anahtar okunmasın.
 # .claude/.mcp.json/.git: ajan kendi klasörüne ayar/hook/MCP yazıp kendine yetki veremesin.
 SUNUCU_YASAK = ["Bash(env:*)", "Bash(printenv:*)", "Read(//proc/**)",
@@ -108,14 +108,9 @@ SUNUCU_YASAK = ["Bash(env:*)", "Bash(printenv:*)", "Read(//proc/**)",
 
 
 def sunucu_araclari(izinli):
-    """Serbest "Bash" → güvenli kalıplar; listede olmayan Bash(...) kalıpları düşer; diğer araçlar aynen kalır."""
-    sonuc = []
-    for a in izinli or []:
-        if a == "Bash":
-            sonuc += SUNUCU_BASH
-        elif not a.startswith("Bash(") or a in SUNUCU_BASH:
-            sonuc.append(a)
-    return list(dict.fromkeys(sonuc))
+    """Sunucuda araç listesini olduğu gibi bırakır (serbest Bash kullanıcı kararı).
+    Güvenlik yasakları yasakli_araclar() üzerinden ayrıca uygulanır."""
+    return list(dict.fromkeys(izinli or []))
 
 
 def calisma_icinde(cwd):
@@ -143,6 +138,38 @@ def eski_kosulari_temizle():
         d = durum_oku(ad[:-5])
         if d and d.get("durum") in ("calisiyor", "basliyor"):
             durum_yaz(ad[:-5], {**d, "durum": "hata", "pid": None, "hata": "sunucu yeniden başladı; koşu yarıda kaldı"})
+
+
+ORTAK_HAFIZA_DOSYASI = os.path.join(HAFIZA_DIZINI, "_ortak.md")
+
+
+MAKS_ORTAK_HAFIZA_PROMPT = 2500  # token tasarrufu: son kısım yeter
+
+
+def ortak_hafiza_oku():
+    try:
+        with open(ORTAK_HAFIZA_DOSYASI, encoding="utf-8") as f:
+            metin = f.read().strip()
+    except FileNotFoundError:
+        return "(önceki madde yok)"
+    if not metin:
+        return "(önceki madde yok)"
+    if len(metin) > MAKS_ORTAK_HAFIZA_PROMPT:
+        metin = "…" + metin[-MAKS_ORTAK_HAFIZA_PROMPT:]
+    return metin
+
+
+def ortak_hafiza_ekle(maddeler):
+    """Tarihli maddeleri ortak hafızaya ekler (süreçler arası kilitli)."""
+    if not maddeler:
+        return []
+    os.makedirs(HAFIZA_DIZINI, exist_ok=True)
+    with open(ORTAK_HAFIZA_DOSYASI, "a", encoding="utf-8") as f:
+        with dosya_kilidi(f):
+            for m in maddeler:
+                f.write(f"\n- [{bugun()}] {str(m)[:MAKS_HAFIZA_EKI]}")
+            f.flush()
+    return maddeler
 
 
 BAGLANTI_HATASI = "Claude bağlantısı kurulmadı ya da geçersiz: üstteki Claude panelinden bağla."

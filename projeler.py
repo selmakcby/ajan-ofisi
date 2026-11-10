@@ -118,7 +118,7 @@ def guncelle(proje_id, baslik=None, aciklama=None, oncelik=None, hedef_tarih=Non
 
 
 def _not(p, metin, kaynak):
-    if kaynak not in ("kullanici", "ceo"):
+    if kaynak not in ("kullanici", "ceo", "ajan"):
         raise ValueError("geçersiz not kaynağı")
     p["notlar"] = (p.get("notlar") or []) + [{"zaman": ortak.simdi_iso(), "kaynak": kaynak,
                                               "metin": _metin(metin, "Not", NOT_MAKS, zorunlu=True)}]

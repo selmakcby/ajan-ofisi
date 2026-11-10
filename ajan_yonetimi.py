@@ -13,6 +13,8 @@ import ortak
 
 YETKILER = {"okuma": ["Read", "Glob", "Grep"], "yazma": ["Write", "Edit"], "komut": ["Bash"],
             "web": ["WebSearch", "WebFetch"]}
+# Yeni ajan varsayilani: oku + yaz + komut + web (genel gecer yetenek seti)
+VARSAYILAN_ARACLAR = [*YETKILER["okuma"], *YETKILER["yazma"], *YETKILER["komut"], *YETKILER["web"]]
 MODELLER = ("sonnet", "haiku", "opus")
 SAGLAYICILAR = ("claude", "opencode")
 # Opencode model varyantı (sağlayıcıya özgü düşünme gücü); boş = varsayılan
@@ -270,7 +272,7 @@ def ajan_ekle(alanlar):
         ad = _metin(alanlar.get("ad"), "Ajan adı", MAKS_AD, bos_olabilir=False)
         ajan = {"id": id_turet(ad, {a.get("id") for a in veri["ajanlar"]}), "ad": ad, "oda": "genel",
                 "cwd": "", "saglayici": "claude", "model": "sonnet", "ne_zaman": "istek", "ne_zaman_metin": "İstek gelince",
-                "aciklama": "", "izinli_araclar": list(YETKILER["okuma"]), "hazir_gorevler": []}
+                "aciklama": "", "izinli_araclar": list(VARSAYILAN_ARACLAR), "hazir_gorevler": []}
         if len(veri["ajanlar"]) >= MAKS_AJAN:
             raise ValueError(f"En fazla {MAKS_AJAN} ajan olabilir.")
         klasor = _alanlari_uygula(veri, ajan, {"cwd": "", **alanlar})

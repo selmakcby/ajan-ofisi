@@ -2473,7 +2473,7 @@ function odalarDuzenle(v) {
 function sayfaGoster(...icerik) { sayfa.replaceChildren(...icerik); sayfa.scrollTop = 0; }
 function ajanFormu(a, v) {
   const yeni = !a;
-  a = a || { ad:'', oda:'', aciklama:'', model:'sonnet', izinli_araclar:['Read', 'Glob', 'Grep'], hazir_gorevler:[], cwd:'' };
+  a = a || { ad:'', oda:'', aciklama:'', model:'sonnet', izinli_araclar:['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'WebSearch', 'WebFetch'], hazir_gorevler:[], cwd:'' };
   const f = el('form', 'form-a');
   const etiket = (metin, girdi) => { const l = el('label', null, metin); f.append(l, girdi); return girdi; };
   const metin = (deger, ipucu) => { const i = el('input'); i.type = 'text'; i.value = deger || ''; if (ipucu) i.placeholder = ipucu; return i; };
@@ -2561,10 +2561,10 @@ function ajanFormu(a, v) {
       const liste = araclar.value.split('\n').map(s => s.trim()).filter(Boolean).filter(x => !YETKI_ARACLARI[k].includes(x));
       araclar.value = (c.checked ? [...liste, ...YETKI_ARACLARI[k]] : liste).join('\n');
     };
-    l.append(c, document.createTextNode(k === 'komut' && SUNUCU_MODU ? ad2 + ' (sunucuda yalnız klasör listeleme: ls)' : ad2)); det.append(l); return c;
+    l.append(c, document.createTextNode(k === 'komut' && SUNUCU_MODU ? ad2 + ' (sunucuda rm/push/curl/sudo yasak)' : ad2)); det.append(l); return c;
   });
   const arDet = el('details'); arDet.append(el('summary', null, 'Araç listesi (ileri düzey)'), araclar,
-    el('div', 'ipucu', 'Her satıra bir Claude Code aracı. Güvenlik yasakları (.env okuma, rm, git push…) her ajana ayrıca eklenir.'));
+    el('div', 'ipucu', 'Her satıra bir Claude Code aracı. Güvenlik yasakları (.env okuma, rm, git push, curl, sudo…) her ajana ayrıca eklenir.'));
   det.append(arDet);
   det.append(el('label', null, 'Hazır görevler'));
   const gorevler = el('div'); det.append(gorevler);
@@ -2662,6 +2662,15 @@ async function hafizaSayfasi() {
   const iz = el('div', 'izgara');
   sirali.forEach(h => {
     const k = el('div', 'kart');
+    if (h.ortak) {
+      const rozet = el('span', 'durum-rozet acik', 'ortak');
+      const ust = el('div', 'ust'); ust.append(rozet, document.createTextNode('hafiza/_ortak.md · ' + h.madde_sayisi + ' madde'));
+      const ul = el('ul'); (h.son_maddeler || []).slice().reverse().forEach(m => ul.append(el('li', null, kisa(m, 160))));
+      if (!(h.son_maddeler || []).length) ul.append(el('li', null, 'henüz madde yok'));
+      k.append(ust, el('h4', null, 'Ortak hafıza (tüm ajanlar)'), ul,
+        el('p', 'alt', 'Her ajan bu notları görür; koşu sonunda <ortak_hafiza_ekle> ile madde ekleyebilir.'));
+      iz.append(k); return;
+    }
     const ust = el('div', 'ust'); ust.append(avatar(h.ajan), document.createTextNode('hafiza/' + h.ajan + '.md · ' + h.madde_sayisi + ' madde'));
     const ul = el('ul'); (h.son_maddeler || []).slice().reverse().forEach(m => ul.append(el('li', null, kisa(m, 160))));
     if (!(h.son_maddeler || []).length) ul.append(el('li', null, 'henüz madde yok'));

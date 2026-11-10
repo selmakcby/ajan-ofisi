@@ -676,7 +676,8 @@ def hafiza_yaniti():
     dosyalar = []
     for ad in sorted(os.listdir(ortak.HAFIZA_DIZINI)):
         kok, uzanti = os.path.splitext(ad)
-        if uzanti != ".md" or not ortak.AJAN_ID_DESENI.match(kok):
+        paylasilan = kok == "_ortak"  # tüm ajanların ortak hafızası
+        if uzanti != ".md" or not (paylasilan or ortak.AJAN_ID_DESENI.match(kok)):
             continue
         yol = os.path.join(ortak.HAFIZA_DIZINI, ad)
         if not os.path.isfile(yol) or os.path.islink(yol):
@@ -685,6 +686,7 @@ def hafiza_yaniti():
             satirlar = [s.strip() for s in f.read().splitlines()]
         maddeler = [s[2:][:300] for s in satirlar if s.startswith("- ")]
         dosyalar.append({"ajan": kok, "madde_sayisi": len(maddeler), "son_maddeler": maddeler[-3:],
+                         "ortak": paylasilan,
                          "guncelleme": datetime.fromtimestamp(os.path.getmtime(yol)).isoformat(timespec="seconds")})
     return {"hafiza": dosyalar}
 
