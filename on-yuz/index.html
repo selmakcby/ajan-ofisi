@@ -184,6 +184,11 @@ h3.kucuk{font-family:"Space Grotesk",sans-serif;font-size:11px;font-weight:600;l
 .izgara .kart .islemler{display:flex;gap:12px;margin-top:10px}
 .izgara .kart .islemler button{font-size:12px;font-weight:600;color:var(--mercan-k)}
 .izgara .kart .islemler button.sil{color:#a1402a}
+.hizli-model{display:flex;align-items:center;gap:8px;margin-top:10px}
+.hizli-model .hizli-etiket{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--soluk);flex:none}
+.hizli-model select{flex:1;min-width:0;padding:6px 9px;border-radius:9px;border:1px solid rgba(59,52,44,.15);background:#fff;font:inherit;font-size:12.5px;color:var(--murekkep)}
+.hizli-rozet{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.03em;padding:2px 7px;border-radius:999px;background:rgba(255,122,89,.14);color:var(--mercan-k);margin-left:6px;vertical-align:middle}
+.hizli-rozet.oc{background:rgba(63,127,181,.14);color:#2f6fb0}
 .form-a{max-width:640px}
 .form-a label{display:block;font-size:12.5px;font-weight:600;color:var(--soluk);margin:14px 0 5px}
 .form-a input[type=text],.form-a select,.form-a textarea{width:100%;padding:9px 11px;border-radius:10px;border:1px solid rgba(59,52,44,.15);background:#fff;font:inherit;font-size:14px;color:var(--murekkep)}
@@ -2251,10 +2256,40 @@ async function ajanlarSayfasi() {
   let v;
   try { v = await getJSON('/api/ajanlar'); } catch { return [el('h2', null, 'Ajanlar'), el('p', 'alt', 'Ajan listesi alınamadı.')]; }
   const odaAdi = id => (v.odalar.find(o => o.id === id)?.ad) || TEMALAR[id]?.ad || odaAdTuret(id);
+  let ocModeller = [];
+  if (!DEMO) { try { ocModeller = ((await getJSON('/api/opencode'))?.modeller) || []; } catch { ocModeller = []; } }
+  // hızlı sağlayıcı/model değiştirme: Claude (sonnet/haiku/opus) ya da önbellekteki opencode modelleri
+  const modelCubugu = a => {
+    const sar = el('div', 'hizli-model');
+    const sec = el('select');
+    const g1 = el('optgroup'); g1.label = 'Claude';
+    [['sonnet', 'Sonnet'], ['haiku', 'Haiku'], ['opus', 'Opus']].forEach(([m, t]) => { const o = el('option', null, t); o.value = 'claude|' + m; g1.append(o); });
+    sec.append(g1);
+    if (ocModeller.length) {
+      const g2 = el('optgroup'); g2.label = 'Opencode';
+      ocModeller.forEach(m => { const o = el('option', null, m); o.value = 'opencode|' + m; g2.append(o); });
+      sec.append(g2);
+    }
+    const cur = (a.saglayici || 'claude') + '|' + (a.model || '');
+    if (![...sec.options].some(o => o.value === cur)) { const o = el('option', null, (a.model || '') + ' (mevcut)'); o.value = cur; sec.append(o); }
+    sec.value = cur;
+    sec.onchange = async () => {
+      const i = sec.value.indexOf('|');
+      const sag = sec.value.slice(0, i), model = sec.value.slice(i + 1);
+      sec.disabled = true;
+      const { durum, veri } = await postJSON('/api/ajanlar', { islem:'guncelle', id:a.id, ajan:{ saglayici:sag, model } });
+      sec.disabled = false;
+      if (durum === 200) { SES.tik(); tost(`${a.ad}: ${sag === 'opencode' ? 'Opencode' : 'Claude'} · ${model}`); }
+      else { tost(veri.hata || 'Değiştirilemedi.'); sec.value = cur; }
+    };
+    sar.append(el('span', 'hizli-etiket', 'Model'), sec);
+    return sar;
+  };
   const arac = el('div', 'arac-cubugu');
   const ekle = el('button', 'koyu', '+ Ajan ekle'); ekle.onclick = () => { SES.tik(); ajanFormu(null, v); };
   const sablon = el('button', 'dugme', 'Şablondan ekle'); sablon.onclick = () => { SES.tik(); sablonSecici(); };
   arac.append(ekle, sablon);
+  if (!DEMO && !ocModeller.length) arac.append(el('span', 'ipucu', 'Opencode modelleri için üstteki Opencode panelinden "Modelleri yenile".'));
   const iz = el('div', 'izgara');
   v.ajanlar.forEach(a => {
     const k = el('div', 'kart');
@@ -2272,7 +2307,10 @@ async function ajanlarSayfasi() {
       };
       islem.append(sil);
     }
-    k.append(el('h4', null, a.ad), el('div', 'oda-adi', odaAdi(a.oda || 'genel')), el('p', null, a.aciklama || ''), islem);
+    const baslik = el('h4', null, a.ad);
+    const sagAd = (a.saglayici || 'claude');
+    baslik.append(el('span', 'hizli-rozet' + (sagAd === 'opencode' ? ' oc' : ''), sagAd === 'opencode' ? 'OC' : 'CL'));
+    k.append(baslik, el('div', 'oda-adi', odaAdi(a.oda || 'genel')), el('p', null, a.aciklama || ''), modelCubugu(a), islem);
     iz.append(k);
   });
   return [el('h2', null, 'Ajanlar'), el('p', 'alt', `${v.ajanlar.length} ajan. Ekle, düzenle ya da sektör şablonundan hazır ajanlar al. Değişiklik hemen ofise yansır.`), arac, iz,
@@ -2374,6 +2412,29 @@ function ajanFormu(a, v) {
   if (!DEMO) getJSON('/api/opencode').then(v => {
     (v.modeller || []).forEach(m => { const o = el('option'); o.value = m; modelDl.append(o); });
   }).catch(() => {});
+  // Otomatik yedek: Claude limitine takılınca opencode'a düş
+  const yedekSec = el('select');
+  [['', 'Yok (otomatik geçiş kapalı)'], ['opencode', 'Opencode (Claude limitinde)']].forEach(([val, t]) => { const o = el('option', null, t); o.value = val; yedekSec.append(o); });
+  yedekSec.value = a.yedek_saglayici || '';
+  const yedekModelKutu = el('div');
+  const yedekModelDl = el('datalist'); yedekModelDl.id = 'ocYedekModeller';
+  const yedekModel = metin(a.yedek_model || '', 'ör. myprovider/deepseek-v4.1-flash');
+  yedekModel.maxLength = 120; yedekModel.setAttribute('list', 'ocYedekModeller');
+  const yedekVariant = el('select');
+  [['', 'Varsayılan'], ['minimal', 'Minimal'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['max', 'Max']]
+    .forEach(([val, t]) => { const o = el('option', null, t); o.value = val; yedekVariant.append(o); });
+  yedekVariant.value = a.yedek_variant || '';
+  const yedekGuncelle = () => {
+    yedekModelKutu.replaceChildren();
+    if (yedekSec.value === 'opencode') yedekModelKutu.append(yedekModel, yedekModelDl, el('div', 'ipucu', 'Yedek düşünme gücü'), yedekVariant);
+  };
+  yedekSec.onchange = yedekGuncelle;
+  dl('Otomatik yedek', yedekSec, 'Claude haftalık/günlük limite takılınca aynı görev bu sağlayıcıyla bir kez otomatik yeniden denenir.');
+  dl('Yedek ayarları', yedekModelKutu);
+  yedekGuncelle();
+  if (!DEMO) getJSON('/api/opencode').then(v => {
+    (v.modeller || []).forEach(m => { const o = el('option'); o.value = m; yedekModelDl.append(o); });
+  }).catch(() => {});
   det.append(el('label', null, 'Yetkiler'));
   const araclar = el('textarea'); araclar.value = (a.izinli_araclar || []).join('\n');
   const kutular = YETKI_ADLARI.map(([k, ad2]) => {
@@ -2413,9 +2474,13 @@ function ajanFormu(a, v) {
       izinli_araclar:[...new Set(araclar.value.split('\n').map(s => s.trim()).filter(Boolean))],
       hazir_gorevler:[...gorevler.children].map(s => ({ etiket:s.children[0].value.trim(), prompt:s.children[2].value.trim() })).filter(g => g.etiket || g.prompt),
       yalin:yalin.checked, tetik_kelime:tetik.value.trim(), saglayici:saglayici.value,
-      variant:saglayici.value === 'opencode' ? variant.value : '' };
+      variant:saglayici.value === 'opencode' ? variant.value : '',
+      yedek_saglayici:yedekSec.value,
+      yedek_model:yedekSec.value === 'opencode' ? yedekModel.value.trim() : '',
+      yedek_variant:yedekSec.value === 'opencode' ? yedekVariant.value : '' };
     const secilenModel = saglayici.value === 'opencode' ? modelMetin.value.trim() : model.value;
     if (ajan.saglayici === 'opencode' && !secilenModel) return tost('Opencode için "sağlayıcı/model" biçiminde model yaz.');
+    if (ajan.yedek_saglayici === 'opencode' && !ajan.yedek_model) return tost('Otomatik yedek için bir Opencode modeli yaz.');
     if (yeni || saglayici.value !== (a.saglayici || 'claude') || secilenModel !== a.model) ajan.model = secilenModel;
     if (a.id === 'ceo') { delete ajan.cwd; } // CEO ofis klasöründe kalır
     if (oda.value === '__yeni') { if (!yeniAd.value.trim()) return tost('Yeni odanın adını yaz.'); ajan.yeni_oda = { ad:yeniAd.value.trim(), tema:tema.value || null }; }

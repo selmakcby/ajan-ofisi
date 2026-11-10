@@ -294,46 +294,45 @@ def opencode_satiri(olay, baglam, sayac, birikim):
         print(f"  ! {birikim['hata']}", flush=True)
 
 
-def kos(arg_dosyasi):
-    with open(arg_dosyasi, encoding="utf-8") as f:
-        arg = json.load(f)
-    veri, tablo = ortak.ajanlari_yukle()
-    ajan = tablo[arg["ajan"]]
-    kosu_id = arg["kosu_id"]
-    baglam = {"kosu_id": kosu_id, "ajan": ajan["id"], "oda": ajan["oda"]}
-    log_yolu = os.path.join(ortak.KOSU_DIZINI, f"{kosu_id}.log")
-    cikti_dizini = os.path.join(ortak.CIKTI_DIZINI, ajan["id"])
-    ortak.ajan_klasoru_ac(cikti_dizini)  # sunucuda ajan kullanıcısı da yazar (--add-dir)
+LIMIT_IZI = re.compile(
+    r"weekly limit|usage limit|rate limit|limit reached|too many requests|quota|credit balance|insufficient",
+    re.I)
 
-    gorev = arg["prompt"].replace("{bugun}", ortak.bugun())
-    devam = arg.get("devam") or {}
-    if devam.get("session_id"):
-        # Sürdürme: şablon ve hafıza önceki koşuda verildi; yalnız cevap gider.
-        tam_prompt = DEVAM_SABLONU.format(kaynak=devam.get("cevap_kaynak") or "kullanici", cevap=devam["cevap"])
+
+def limit_hatasi_mi(sonuc, hata):
+    """Claude (ya da sağlayıcı) haftalık/günlük limite takıldı mı? Yedek sağlayıcıya geçiş kararı için."""
+    metin = " ".join(str(x or "") for x in [hata, (sonuc or {}).get("result")])
+    return bool(LIMIT_IZI.search(metin))
+
+
+def yedek_ayari(ajan):
+    """Claude limitine takılınca otomatik geçilecek yedek sağlayıcı (yalnız opencode)."""
+    if saglayici(ajan) != "claude":
+        return None
+    ys = (ajan.get("yedek_saglayici") or "").strip().lower()
+    ym = (ajan.get("yedek_model") or "").strip()
+    if ys != "opencode" or not ym:
+        return None
+    return {"saglayici": "opencode", "model": ym, "variant": (ajan.get("yedek_variant") or "").strip()}
+
+
+def _tek_kos(ajan, sag, model, variant, tam_prompt, devam_session, veri, kosu_id, log_yolu,
+             cikti_dizini, baglam, log_mod):
+    """Tek bir sağlayıcı/model ile koşar. (sonuc, hata, sayac) döndürür."""
+    aa = {**ajan, "model": model}
+    if variant:
+        aa["variant"] = variant
     else:
-        tam_prompt = GOREV_SABLONU.format(ad=ajan["ad"], oda=ajan["oda"], bugun=ortak.bugun(),
-                                          hafiza=hafiza_oku(ajan["id"]), gorev=gorev)
-    sag = saglayici(ajan)
-    cfg_yolu = opencode_yapilandirma(ajan, kosu_id) if sag == "opencode" else None
-    if sag == "opencode":
-        komut = opencode_komut_kur(ajan, kosu_id, devam.get("session_id"), tam_prompt, cfg_yolu)
-    else:
-        komut = komut_kur(ajan, ortak.yasakli_araclar(veri), cikti_dizini, devam.get("session_id"))
-
-    baslangic = time.time()
-    ortak.durum_yaz(ajan["id"], {"durum": "calisiyor", "kosu_id": kosu_id, "pid": os.getpid(),
-                                 "baslangic": ortak.simdi_iso(), "baslangic_ts": baslangic,
-                                 "etiket": arg.get("etiket")})
-    ortak.olay_yaz({**baglam, "tur": "kosu_basladi", "model": ajan["model"],
-                    "etiket": arg.get("etiket"), "log": os.path.relpath(log_yolu, ortak.VERI)})
-    print(f"▶ {ajan['ad']} ({ajan['model']}) · {ajan['cwd']}\n  görev: {gorev[:200]}\n", flush=True)
-
+        aa.pop("variant", None)
+    cfg_yolu = opencode_yapilandirma(aa, kosu_id) if sag == "opencode" else None
+    komut = (opencode_komut_kur(aa, kosu_id, devam_session, tam_prompt, cfg_yolu) if sag == "opencode"
+             else komut_kur(aa, ortak.yasakli_araclar(veri), cikti_dizini, devam_session))
     sonuc, hata = None, None
     sayac = {"tarih": ortak.bugun(), "tekil": token_sayac.MesajTekil()}
     birikim = {"metin": "", "token": token_sayac.bos(), "maliyet": 0, "oturum": None, "hata": None}
     try:
-        with open(log_yolu, "w", encoding="utf-8") as log:
-            calisma_dizini = YALIN_DIZIN if ajan.get("yalin") else ajan["cwd"]
+        with open(log_yolu, log_mod, encoding="utf-8") as log:
+            calisma_dizini = YALIN_DIZIN if aa.get("yalin") else aa["cwd"]
             ortak.ajan_klasoru_ac(calisma_dizini)
             ortam_ek = {"OPENCODE_CONFIG": cfg_yolu, "OPENCODE_DISABLE_AUTOUPDATE": "1"} if sag == "opencode" else None
             surec = subprocess.Popen(komut, cwd=calisma_dizini, stdin=subprocess.PIPE,
@@ -376,6 +375,50 @@ def kos(arg_dosyasi):
                 os.remove(cfg_yolu)
             except OSError:
                 pass
+    return sonuc, hata, sayac
+
+
+def kos(arg_dosyasi):
+    with open(arg_dosyasi, encoding="utf-8") as f:
+        arg = json.load(f)
+    veri, tablo = ortak.ajanlari_yukle()
+    ajan = tablo[arg["ajan"]]
+    kosu_id = arg["kosu_id"]
+    baglam = {"kosu_id": kosu_id, "ajan": ajan["id"], "oda": ajan["oda"]}
+    log_yolu = os.path.join(ortak.KOSU_DIZINI, f"{kosu_id}.log")
+    cikti_dizini = os.path.join(ortak.CIKTI_DIZINI, ajan["id"])
+    ortak.ajan_klasoru_ac(cikti_dizini)  # sunucuda ajan kullanıcısı da yazar (--add-dir)
+
+    gorev = arg["prompt"].replace("{bugun}", ortak.bugun())
+    devam = arg.get("devam") or {}
+    if devam.get("session_id"):
+        # Sürdürme: şablon ve hafıza önceki koşuda verildi; yalnız cevap gider.
+        tam_prompt = DEVAM_SABLONU.format(kaynak=devam.get("cevap_kaynak") or "kullanici", cevap=devam["cevap"])
+    else:
+        tam_prompt = GOREV_SABLONU.format(ad=ajan["ad"], oda=ajan["oda"], bugun=ortak.bugun(),
+                                          hafiza=hafiza_oku(ajan["id"]), gorev=gorev)
+    sag = saglayici(ajan)
+    model, variant = ajan.get("model"), (ajan.get("variant") or "")
+
+    baslangic = time.time()
+    ortak.durum_yaz(ajan["id"], {"durum": "calisiyor", "kosu_id": kosu_id, "pid": os.getpid(),
+                                 "baslangic": ortak.simdi_iso(), "baslangic_ts": baslangic,
+                                 "etiket": arg.get("etiket")})
+    ortak.olay_yaz({**baglam, "tur": "kosu_basladi", "model": model,
+                    "etiket": arg.get("etiket"), "log": os.path.relpath(log_yolu, ortak.VERI)})
+    print(f"▶ {ajan['ad']} ({model}) · {ajan['cwd']}\n  görev: {gorev[:200]}\n", flush=True)
+
+    sonuc, hata, sayac = _tek_kos(ajan, sag, model, variant, tam_prompt, devam.get("session_id"),
+                                  veri, kosu_id, log_yolu, cikti_dizini, baglam, "w")
+
+    # Otomatik yedek: Claude limitine takıldıysa aynı görevi opencode ile bir kez dene.
+    yedek = yedek_ayari(ajan)
+    if yedek and (not sonuc or sonuc.get("is_error") or hata) and limit_hatasi_mi(sonuc, hata):
+        print(f"  ⇄ Claude limiti algılandı; yedek sağlayıcıya geçiliyor: opencode/{yedek['model']}", flush=True)
+        ortak.olay_yaz({**baglam, "tur": "ilerledi", "arac": "yedek-saglayici",
+                        "detay": f"opencode/{yedek['model']}"})
+        sonuc, hata, sayac = _tek_kos(ajan, yedek["saglayici"], yedek["model"], yedek["variant"], tam_prompt,
+                                      devam.get("session_id"), veri, kosu_id, log_yolu, cikti_dizini, baglam, "a")
 
     try:
         token_kesinle(baglam, sonuc, sayac)

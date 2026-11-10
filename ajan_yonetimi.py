@@ -80,6 +80,14 @@ def dogrula(veri):
             raise ValueError(f"Opencode modeli 'saglayici/model' biçiminde olmalı: {a.get('model')!r}")
         if a.get("variant") not in (None, *[v for v in VARIANTLAR if v]):
             raise ValueError(f"Geçersiz düşünme gücü: {a.get('variant')!r}")
+        yedek = a.get("yedek_saglayici")
+        if yedek not in (None, "", "opencode"):
+            raise ValueError(f"Yedek sağlayıcı yalnız opencode olabilir: {yedek!r}")
+        if isinstance(a.get("yedek_model"), str) and a["yedek_model"] \
+                and not OPENCODE_MODEL_DESENI.match(a["yedek_model"]):
+            raise ValueError(f"Yedek model 'saglayici/model' biçiminde olmalı: {a['yedek_model']!r}")
+        if a.get("yedek_variant") not in (None, *[v for v in VARIANTLAR if v]):
+            raise ValueError(f"Geçersiz yedek düşünme gücü: {a.get('yedek_variant')!r}")
     if "ceo" not in idler:
         raise ValueError("CEO silinemez.")
     for o in veri.get("odalar") or []:  # aynı id'li oda eski dosyalarda olabilir: ilki geçerli, reddedilmez
@@ -190,6 +198,31 @@ def _alanlari_uygula(veri, ajan, alanlar):
             ajan["variant"] = v
         else:
             ajan.pop("variant", None)
+    if "yedek_saglayici" in alanlar:
+        ys = alanlar["yedek_saglayici"] or ""
+        if ys not in ("", "opencode"):
+            raise ValueError("Yedek sağlayıcı yalnız opencode olabilir.")
+        if ys:
+            ajan["yedek_saglayici"] = ys
+        else:  # yedek kapatıldı: ilgili alanları temizle
+            for k in ("yedek_saglayici", "yedek_model", "yedek_variant"):
+                ajan.pop(k, None)
+    if "yedek_model" in alanlar:
+        ym = (alanlar["yedek_model"] or "").strip()
+        if ym and (not OPENCODE_MODEL_DESENI.match(ym) or len(ym) > 120):
+            raise ValueError("Yedek model 'saglayici/model' biçiminde olmalı.")
+        if ym:
+            ajan["yedek_model"] = ym
+        else:
+            ajan.pop("yedek_model", None)
+    if "yedek_variant" in alanlar:
+        yv = alanlar["yedek_variant"] or ""
+        if yv not in VARIANTLAR:
+            raise ValueError("Yedek düşünme gücü geçersiz.")
+        if yv:
+            ajan["yedek_variant"] = yv
+        else:
+            ajan.pop("yedek_variant", None)
     if "model" in alanlar:
         model = alanlar["model"]
         sag = ajan.get("saglayici") or "claude"

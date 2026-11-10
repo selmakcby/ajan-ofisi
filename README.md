@@ -73,6 +73,11 @@ docker compose logs ofis                             # ilk açılışta KURULUM 
   seçilince model bir **combobox** olur (önbellekteki modellerden seçilir ya da `sağlayıcı/model` yazılır) ve
   **düşünme gücü** (varsayılan / minimal / low / medium / high / max) seçilebilir. İzinler Claude araç listesinden
   çevrilir; `.env`/`secret` okuma her zaman kapalıdır.
+- **Hızlı model değiştirme:** Ajanlar sayfasındaki her kartta bir model seçici var; Claude (sonnet/haiku/opus) ile
+  önbellekteki opencode modelleri arasında tek tıkla geçilir. "OC/CL" rozeti ajanın o anki sağlayıcısını gösterir.
+- **Otomatik yedek:** Ajan formunun *Gelişmiş → Otomatik yedek* bölümünde Opencode seçilirse, Claude haftalık/günlük
+  limite takıldığında (`usage limit`, `429`, `rate limit` vb.) aynı görev opencode ile **bir kez** otomatik yeniden
+  denenir; koşu günlüğüne ve olay akışına "yedek sağlayıcı" notu düşer. Yedek model/ düşünme gücü ayrıca ayarlanır.
 - **Veriler** tek bir Docker volume'unda (`ofis-veri` → `/veri`): hesap, ajanlar, hafıza, çıktılar, ayarlar,
   `CLAUDE.md` (sunucuda düzenlenebilir) ve Claude oturum kayıtları. Güncelleme: `git pull && docker compose up -d
   --build` (veri kalır). Yedek: `docker run --rm -v ajan-ofisi_ofis-veri:/veri -v "$PWD":/yedek alpine tar czf
