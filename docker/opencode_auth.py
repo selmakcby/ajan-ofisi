@@ -80,7 +80,10 @@ def _yapilandirma():
             if not isinstance(sid, str) or not SAGLAYICI_DESENI.match(sid):
                 continue
             ad = s.get("name") if isinstance(s, dict) else None
-            saglayicilar.append({"id": sid, "ad": ad if isinstance(ad, str) else None})
+            # anahtarın varlığını (değerini değil) bildir: config içinde tanımlı mı?
+            opts = (s or {}).get("options") if isinstance(s, dict) else None
+            anahtar = bool(isinstance(opts, dict) and opts.get("apiKey"))
+            saglayicilar.append({"id": sid, "ad": ad if isinstance(ad, str) else None, "anahtar": anahtar})
             for mid in ((s or {}).get("models") or {}):
                 if isinstance(mid, str) and mid:
                     modeller.append(f"{sid}/{mid}")

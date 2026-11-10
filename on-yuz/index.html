@@ -625,10 +625,14 @@ function opencodeFormu(kutu, d, yenile) {
     if (veri.tamam && veri.yol) { yaz('Yapılandırma kaydedildi: ' + veri.yol + (veri.modeller?.length ? ` (${veri.modeller.length} model)` : '')); return; }
     if (veri.saglayicilar) { listele(veri.saglayicilar); return yaz('Kaydedildi.'); }
     if (veri.modeller) {
-      const liste = (veri.modeller || {}).modeller || [];
-      if (!liste.length) return yaz('Hiç model bulunamadı. opencode.json’da sağlayıcı/model tanımlı mı ve "Tanılama" ne diyor?', true);
-      const provs = [...new Set(liste.map(m => m.split('/')[0]))];
-      return yaz(`${liste.length} model (${provs.join(', ')}) önbelleğe alındı. Ajan formunda combobox’tan seçebilirsin.`);
+      // modeller: dizi ya da {modeller:[...]} olabilir — ikisini de kabul et
+      const liste = Array.isArray(veri.modeller) ? veri.modeller : (veri.modeller.modeller || []);
+      if (!liste.length) return yaz('Hiç model bulunamadı. "Tanılama" çıktısını kontrol et (config yolu ve model sayısı).', true);
+      const provs = [...new Set(liste.map(m => String(m).split('/')[0]))];
+      const eksik = veri.eksik_anahtar || [];
+      return yaz(`${liste.length} model (${provs.join(', ')}) önbelleğe alındı.` +
+        (eksik.length ? ` ⚠ Anahtarsız sağlayıcı: ${eksik.join(', ')} — Sağlayıcı ekle bölümünden bu id ile kaydet.` : '') +
+        ' Ajan formunda combobox’tan seçebilirsin.', eksik.length > 0);
     }
     yenile(veri);
   }

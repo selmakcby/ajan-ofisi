@@ -316,13 +316,28 @@ def auth_islem(veri):
     return sonuc
 
 
+def eksik_anahtarlar(liste):
+    """Model listesinde geçen ama ne auth.json'da ne config'de anahtarı olan sağlayıcılar."""
+    provs = {str(m).split("/", 1)[0] for m in (liste or []) if "/" in str(m)} - {"opencode"}
+    if not provs:
+        return []
+    cfg = yapilandirma()
+    cfg_anahtar = {x.get("id") for x in (cfg.get("saglayicilar") or []) if x.get("anahtar")}
+    try:
+        auth_ids = {x.get("id") for x in (auth_islem({"islem": "liste"}).get("saglayicilar") or [])}
+    except ValueError:
+        auth_ids = set()
+    return sorted(p for p in provs if p not in cfg_anahtar and p not in auth_ids)
+
+
 def islem(veri, env_yolu=None):
     i = veri.get("islem")
     if i == "dene":
         return {**durum(env_yolu), "deneme": baglanti_dene(env_yolu)}
     if i == "modeller":
-        return {**durum(env_yolu), **modeller(tazele=bool(veri.get("tazele"))),
-                "saglayici_listesi": saglayici_listesi()}
+        m = modeller(tazele=bool(veri.get("tazele")))
+        return {**durum(env_yolu), **m, "saglayici_listesi": saglayici_listesi(),
+                "eksik_anahtar": eksik_anahtarlar(m.get("modeller"))}
     if i == "auth-liste":
         return auth_islem({"islem": "liste"})
     if i == "auth-ekle":
