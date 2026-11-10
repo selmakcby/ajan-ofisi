@@ -607,11 +607,23 @@ function opencodeFormu(kutu, d, yenile) {
   }
 
   const alt = el('div', 'tg-alt');
+  const tanila = el('button', 'dugme', 'Tanılama'); tanila.type = 'button'; tanila.onclick = async () => {
+    tanila.disabled = true; yaz('Tanılanıyor…');
+    const { durum, veri } = await postJSON('/api/opencode', { islem:'teshis' }).catch(() => ({ durum:0, veri:{ hata:'Sunucuya ulaşılamadı.' } }));
+    tanila.disabled = false;
+    if (durum !== 200) return yaz(veri.hata || 'Tanılama yapılamadı.', true);
+    const c = veri.calistirma || {};
+    yaz(`Yol: ${veri.yol || 'bulunamadı'} · mevcut: ${veri.mevcut ? 'evet' : 'hayır'} · sürüm: ${veri.surum || '-'}` +
+      (c.hata ? ` · hata: ${c.hata}` : '') +
+      ` · cwd: ${veri.cwd} · auth: ${Array.isArray(veri.auth) ? (veri.auth.join(', ') || 'yok') : veri.auth}`);
+  };
   if (d.tur === 'kurulu') {
     const t = el('button', 'dugme', 'Bağlantıyı dene'); t.type = 'button'; t.onclick = () => gonder({ islem:'dene' }, t); alt.append(t);
     const m = el('button', 'dugme', 'Modelleri yenile'); m.type = 'button'; m.onclick = () => gonder({ islem:'modeller', tazele:true }, m); alt.append(m);
+    alt.append(tanila);
   } else {
-    kutu.append(el('p', 'tg-not', 'Bu sunucuda opencode komutu bulunamadı. Docker imajında kurulu olmalı ya da sunucuya kurulmalı.'));
+    kutu.append(el('p', 'tg-not', 'opencode komutu bulunamadı. Kuruluysa "Tanılama" ile yolu ve hatayı görebilirsin.'));
+    alt.append(tanila);
   }
   kutu.append(alt, mesaj);
 }

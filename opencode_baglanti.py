@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import ortak
 
@@ -22,8 +23,21 @@ def model_cache_yolu():
     return os.path.join(ortak.DURUM_DIZINI, "opencode-modeller.json")
 
 
+ADAY_YOLLAR = ("/usr/local/bin/opencode", "/usr/bin/opencode", "/opt/opencode/bin/opencode")
+
+
 def exe():
-    return shutil.which("opencode") or "opencode"
+    """opencode ikilisini bul: PATH, sonra bilinen kurulum yerleri."""
+    yol = shutil.which("opencode")
+    if yol:
+        return yol
+    for p in ADAY_YOLLAR:
+        try:
+            if os.path.isfile(p) and os.access(p, os.X_OK):
+                return p
+        except OSError:
+            continue
+    return "opencode"
 
 
 def ajan_home():
@@ -31,11 +45,30 @@ def ajan_home():
     return os.path.join(ortak.VERI, "ev-ajan") if ortak.SUNUCU else os.path.expanduser("~")
 
 
+def calisma_dizini():
+    """opencode sürecinin başlatılacağı dizin: ofis kullanıcısının erişebildiği bir yer olmalı.
+    (/veri/ev-ajan 0700'dir; ofis oraya giremez — Home ayarı sudo ile verilir, cwd ile değil.)"""
+    if not ortak.SUNUCU:
+        return ortak.VERI
+    return ortak.VERI if os.access(ortak.VERI, os.X_OK) else "/tmp"
+
+
+def _kisa_hata(r):
+    """Komutun gerçek hatasını kısa ve anahtarsız biçimde çıkarır."""
+    for akis in (r.stderr, r.stdout):
+        metin = (akis or "").strip()
+        if metin:
+            satirlar = [s.strip() for s in metin.splitlines() if s.strip()]
+            return " | ".join(satirlar[-3:])[:300]
+    return f"çıkış kodu {r.returncode}" if r.returncode else ""
+
+
 def _komut(argv):
     """Sunucuda ajan kullanıcısı/ev diziniyle çalıştır (kimlik deposu tutarlı olsun)."""
     if not ortak.SUNUCU:
         return argv
     return ["sudo", "-n", "-u", "ajan", "--preserve-env=" + AJAN_ORTAM, "--", *argv]
+
 
 
 def _ortam():
@@ -60,26 +93,37 @@ def _auth_dosyalari():
     return list(dict.fromkeys(adaylar))
 
 
+_AUTH_CACHE = {"t": 0.0, "v": None}
+
+
 def _auth_var():
+    # 60 sn önbellek: her panel açılışında sudo/python süreci başlatmayalım
+    simdi = time.time()
+    if _AUTH_CACHE["v"] is not None and simdi - _AUTH_CACHE["t"] < 60:
+        return _AUTH_CACHE["v"]
+    sonuc = _auth_var_hesapla()
+    _AUTH_CACHE["v"], _AUTH_CACHE["t"] = sonuc, simdi
+    return sonuc
+
+
+def _auth_var_hesapla():
     for p in _auth_dosyalari():
         try:
             if os.path.exists(p):
                 return True
         except OSError:
             continue
-    if ortak.SUNUCU:  # /veri/ev-ajan 0700: ofis okuyamaz, ajan olarak test et
-        for p in _auth_dosyalari():
-            try:
-                r = subprocess.run(_komut(["test", "-f", p]), capture_output=True, timeout=15, env=_ortam())
-                if r.returncode == 0:
-                    return True
-            except (OSError, subprocess.TimeoutExpired):
-                break
+    if ortak.SUNUCU:  # /veri/ev-ajan 0700: ofis okuyamaz; izinli yardımcıyla (sudo) sor
+        try:
+            sonuc = auth_islem({"islem": "liste"})
+            return bool(sonuc.get("saglayicilar"))
+        except ValueError:
+            return False
     return False
 
 
 def durum(env_yolu=None):
-    yol = shutil.which("opencode")
+    yol = shutil.which("opencode") or (exe() if exe() != "opencode" else None)
     if not yol:
         return {"tur": "yok", "surum": None, "auth": False, "model": test_modeli(env_yolu)}
     try:
@@ -152,11 +196,11 @@ def baglanti_dene(env_yolu=None):
     try:
         r = subprocess.run(_komut([exe(), "run", "--format", "json", "-m", model, "Yalnız OK yaz."]),
                            capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           timeout=150, cwd=ajan_home() if ortak.SUNUCU else ortak.VERI, env=_ortam())
+                           timeout=150, cwd=calisma_dizini(), env=_ortam())
     except subprocess.TimeoutExpired:
         raise ValueError("Opencode 150 saniyede cevap vermedi.") from None
-    except OSError:
-        raise ValueError("opencode çalıştırılamadı (kurulum/izin sorunu).") from None
+    except OSError as e:
+        raise ValueError(f"opencode başlatılamadı: {type(e).__name__}: {e}") from None
     metin, hata = "", None
     for satir in (r.stdout or "").splitlines():
         try:
@@ -170,8 +214,38 @@ def baglanti_dene(env_yolu=None):
     if hata:
         raise ValueError("Opencode bağlantısı çalışmadı: " + hata)
     if not metin.strip() and r.returncode != 0:
-        raise ValueError("Opencode bağlantısı çalışmadı; `opencode auth login` ile giriş yap.")
+        detay = _kisa_hata(r)
+        raise ValueError("Opencode bağlantısı çalışmadı" + (f": {detay}" if detay else "; `opencode auth login` ile giriş yap."))
     return {"tamam": True, "yanit": metin.strip()[:80], "model": model}
+
+
+def teshis():
+    """Sunucuda opencode kurulumu/izinleri için ayrıntılı tanılama (sır içermez)."""
+    yol = shutil.which("opencode")
+    bilgi = {"sunucu": ortak.SUNUCU, "yol": yol, "mevcut": bool(yol),
+             "surum": None, "calistirma": None, "cwd": calisma_dizini(),
+             "auth": None}
+    if yol:
+        try:
+            bilgi["mevcut"] = os.path.isfile(yol)
+            bilgi["calistirilabilir"] = os.access(yol, os.X_OK)
+        except OSError:
+            pass
+        try:
+            r = subprocess.run(_komut([yol, "--version"]), capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=30, env=_ortam())
+            bilgi["surum"] = (r.stdout or "").strip().splitlines()[0][:40] if r.returncode == 0 else None
+            bilgi["calistirma"] = {"kod": r.returncode, "hata": _kisa_hata(r) if r.returncode else ""}
+        except subprocess.TimeoutExpired:
+            bilgi["calistirma"] = {"kod": None, "hata": "zaman aşımı"}
+        except OSError as e:
+            bilgi["calistirma"] = {"kod": None, "hata": f"{type(e).__name__}: {e}"}
+    try:
+        l = auth_islem({"islem": "liste"})
+        bilgi["auth"] = [x.get("id") for x in (l.get("saglayicilar") or [])]
+    except ValueError as e:
+        bilgi["auth"] = f"okunamadı: {e}"
+    return bilgi
 
 
 def _auth_helper_komut():
@@ -215,4 +289,6 @@ def islem(veri, env_yolu=None):
     if i == "auth-sil":
         auth_islem({"islem": "sil", "saglayici": veri.get("saglayici")})
         return {"tamam": True, **auth_islem({"islem": "liste"})}
+    if i == "teshis":
+        return teshis()
     raise ValueError("bilinmeyen işlem")
