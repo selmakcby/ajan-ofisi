@@ -197,9 +197,16 @@ def _cache_oku():
 
 
 def model_ozeti():
-    """Önbellekteki model listesi (komut çalıştırmadan, hızlı). Yoksa boş."""
-    c = _cache_oku()
-    return c or {"modeller": [], "zaman": None}
+    """Hızlı model listesi: önbellek + opencode.json tanımları birleşik (komut çalıştırmaz)."""
+    c = _cache_oku() or {}
+    liste = list(c.get("modeller") or [])
+    try:  # config'de tanımlı modeller önbellekte olmasa da görünsün
+        for m in (yapilandirma().get("modeller") or []):
+            if MODEL_DESENI.match(m) and m not in liste:
+                liste.append(m)
+    except Exception:  # noqa: BLE001 — config okunamazsa önbellekle devam
+        pass
+    return {"modeller": liste[:500], "zaman": c.get("zaman")}
 
 
 def _cache_yaz(liste):
@@ -222,6 +229,36 @@ def modeller(tazele=False):
     liste = _modeller_getir()
     _cache_yaz(liste)
     return {"modeller": liste, "zaman": ortak.simdi_iso()}
+
+
+def json_calistir(prompt, model, zaman_asimi=240):
+    """Tek seferlik opencode çağrısı: model cevabını metin olarak döndürür (CEO JSON'u için)."""
+    if not isinstance(model, str) or "/" not in model:
+        raise ValueError("Model 'saglayici/model' biçiminde olmalı.")
+    try:
+        r = subprocess.run(_komut([exe(), "run", "--format", "json", "--pure", "-m", model, prompt]),
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=zaman_asimi, cwd=calisma_dizini(), env=_ortam())
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"Opencode {zaman_asimi} saniyede cevap vermedi.") from None
+    except OSError as e:
+        raise ValueError(f"opencode başlatılamadı: {type(e).__name__}: {e}") from None
+    metin, hata = "", None
+    for satir in (r.stdout or "").splitlines():
+        try:
+            olay = json.loads(satir)
+        except json.JSONDecodeError:
+            continue
+        if olay.get("type") == "text":
+            metin += (olay.get("part") or {}).get("text", "")
+        elif olay.get("type") == "error":
+            hata = str((olay.get("part") or {}).get("error") or olay.get("error") or "")[:200]
+    if hata:
+        raise ValueError("Opencode hatası: " + hata)
+    if not metin.strip():
+        detay = _kisa_hata(r)
+        raise ValueError("Opencode boş cevap döndürdü" + (f": {detay}" if detay else ""))
+    return metin
 
 
 def baglanti_dene(env_yolu=None):

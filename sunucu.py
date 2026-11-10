@@ -291,10 +291,37 @@ def claude_json(prompt, model, sema, log_id, zaman_asimi=CEO_ZAMAN_ASIMI):
                            capture_output=True, timeout=zaman_asimi, env=ortak.alt_surec_ortami())
     with open(os.path.join(ortak.KOSU_DIZINI, f"{log_id}.log"), "w", encoding="utf-8") as f:
         f.write(surec.stdout + ("\n--- stderr ---\n" + surec.stderr if surec.stderr else ""))
-    ham = json.loads(surec.stdout)
-    if ham.get("is_error") and ortak.baglanti_hatasi_mi(str(ham.get("result"))):
-        raise ValueError(ortak.BAGLANTI_HATASI)
+    try:
+        ham = json.loads(surec.stdout)
+    except json.JSONDecodeError:
+        detay = (surec.stderr or surec.stdout or "").strip().splitlines()
+        raise ValueError("Claude yanıtı okunamadı" + (": " + detay[-1][:200] if detay else "")) from None
+    if ham.get("is_error"):
+        mesaj = str(ham.get("result") or "")
+        if ortak.baglanti_hatasi_mi(mesaj):
+            raise ValueError(ortak.BAGLANTI_HATASI)
+        if ortak.limit_hatasi_mi(mesaj):
+            raise ValueError(ortak.LIMIT_HATASI)
+        raise ValueError("Claude hata döndürdü: " + (mesaj[:200] or "bilinmiyor"))
     return {"veri": json_ayikla(ham), "ham": ham}
+
+
+def opencode_json(prompt, sema, log_id, zaman_asimi=CEO_ZAMAN_ASIMI):
+    """Claude limitine takılınca CEO planı için opencode yedeği. Model: OFIS_OPENCODE_CEO_MODEL
+    (yoksa opcode_baglanti test modeli). Cevap metninden JSON çıkarılır."""
+    model = (ortak.env_oku().get("OFIS_OPENCODE_CEO_MODEL") or opencode_baglanti.test_modeli()).strip()
+    if "/" not in model:
+        raise ValueError("OFIS_OPENCODE_CEO_MODEL 'saglayici/model' biçiminde olmalı.")
+    tam = (prompt + "\n\nYalnız şu JSON şemasına uyan TEK bir JSON nesnesi döndür (başka metin yok):\n"
+           + json.dumps(sema, ensure_ascii=False))
+    metin = opencode_baglanti.json_calistir(tam, model, zaman_asimi=zaman_asimi)
+    with open(os.path.join(ortak.KOSU_DIZINI, f"{log_id}.log"), "w", encoding="utf-8") as f:
+        f.write(metin)
+    try:
+        veri = json_ayikla({"result": metin})
+    except ValueError as e:
+        raise ValueError(f"Opencode CEO cevabında JSON yok: {e}") from None
+    return {"veri": veri, "ham": {"result": metin, "model": model, "yedek": True}}
 
 
 def ceo_calistir(metin, kuru=False, kaynak="arayuz", onceki_cevap=None):
@@ -305,16 +332,32 @@ def ceo_calistir(metin, kuru=False, kaynak="arayuz", onceki_cevap=None):
     ceo_id = f"{datetime.now():%Y-%m-%d-%H%M%S}-ceo-{secrets.token_hex(2)}"
     ortak.olay_yaz({"tur": "ceo_basladi", "kosu_id": ceo_id, "ajan": "ceo", "oda": "ceo"})
     baslangic = time.time()
+    prompt_ceo = ceo_promptu(metin, tablo, onceki_cevap)
     try:
-        yanit = claude_json(ceo_promptu(metin, tablo, onceki_cevap), ceo["model"], CEO_SEMASI, ceo_id)
+        try:
+            yanit = claude_json(prompt_ceo, ceo["model"], CEO_SEMASI, ceo_id)
+        except (subprocess.TimeoutExpired, OSError, ValueError) as e:
+            # Claude limitine/bağlantısına takıldıysa CEO planını opencode ile bir kez dene.
+            if not (isinstance(e, ValueError) and str(e) in (ortak.LIMIT_HATASI, ortak.BAGLANTI_HATASI)):
+                raise
+            ortak.olay_yaz({"tur": "ilerledi", "kosu_id": ceo_id, "ajan": "ceo", "oda": "ceo",
+                            "arac": "yedek-saglayici", "detay": "opencode (CEO)"})
+            yanit = opencode_json(prompt_ceo, CEO_SEMASI, ceo_id)
         sonuc = yanit["ham"]
         cevap, gecerli, reddedilen = ceo_dogrula(yanit["veri"], tablo, metin)
     except (subprocess.TimeoutExpired, OSError, ValueError) as e:  # JSONDecodeError bir ValueError
+        detay = f"{type(e).__name__}: {str(e)[:300]}"
         ortak.olay_yaz({"tur": "ceo_bitti", "kosu_id": ceo_id, "ajan": "ceo", "oda": "ceo",
-                        "durum": "hata", "hata": f"{type(e).__name__}: {str(e)[:200]}",
+                        "durum": "hata", "hata": detay,
                         "sure_sn": round(time.time() - baslangic, 1)})
-        raise IstekHatasi(502, str(e) if str(e) == ortak.BAGLANTI_HATASI
-                          else "CEO geçerli bir plan döndürmedi; koşu başlatılmadı") from e
+        # Kullanıcıya gerçek nedeni göster (bağlantı / limit / şema).
+        if str(e) in (ortak.BAGLANTI_HATASI, ortak.LIMIT_HATASI):
+            mesaj = str(e)
+        elif isinstance(e, subprocess.TimeoutExpired):
+            mesaj = "CEO zaman aşımına uğradı; koşu başlatılmadı"
+        else:
+            mesaj = "CEO geçerli bir plan döndürmedi; koşu başlatılmadı · " + str(e)[:200]
+        raise IstekHatasi(502, mesaj) from e
 
     baslatilan = []
     for a in ([] if kuru else gecerli):

@@ -1822,7 +1822,7 @@ function olayIsle(o) {
       }
       if (tekrar || !a) return;
       cekirdek.dusun = false; cekirdekParla(.8);
-      a.balon = o.durum === 'hata' ? 'Plan çıkaramadım; hiçbir koşu başlatmadım.' : (o.cevap || '');
+      a.balonMetin = o.durum === 'hata' ? 'Plan çıkaramadım; hiçbir koşu başlatmadım.' : (o.cevap || '');
       a.balonBitis = Date.now() + 16000;
       ajanBitir(a, { sure_sn:o.sure_sn, ozet:o.cevap, durum:o.durum });
       (o.baslatilan || []).forEach((b, i) => {
@@ -2955,7 +2955,7 @@ function etiketGuncelle() {
   [...AJANLAR, ...altAjanlar].forEach(a => {
     const e = etiketAl(a);
     const [sinif, metin] = etiketMetni(a);
-    const balonMetin = a.balon && Date.now() < a.balonBitis ? a.balon : null;
+    const balonMetin = a.balonMetin && Date.now() < (a.balonBitis || 0) ? a.balonMetin : null;
     let degisti = false;
     if (e.metin !== metin) { e.ne.textContent = metin; e.metin = metin; degisti = true; }
     const rozetMetin = !a.alt && a.terminal && a.terminalSay > 1 ? a.terminalSay + ' terminal' : '';

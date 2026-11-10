@@ -147,11 +147,21 @@ def eski_kosulari_temizle():
 
 BAGLANTI_HATASI = "Claude bağlantısı kurulmadı ya da geçersiz: üstteki Claude panelinden bağla."
 _BAGLANTI_IZI = re.compile(r"not logged in|/login|invalid api key|api key|oauth token|authentication", re.I)
+LIMIT_HATASI = ("Claude kullanım limitine takıldı (haftalık/günlük). Bir süre sonra dene ya da ajan formunda "
+                "Otomatik yedek olarak Opencode tanımla.")
+_LIMIT_IZI = re.compile(
+    r"weekly limit|usage limit|rate limit|limit reached|too many requests|quota|credit balance|insufficient",
+    re.I)
 
 
 def baglanti_hatasi_mi(metin):
     """claude'un "giriş yok / anahtar geçersiz" cevabı mı? (kullanıcıya anlaşılır mesaj gösterilir)"""
     return bool(_BAGLANTI_IZI.search(metin or ""))
+
+
+def limit_hatasi_mi(metin):
+    """Sağlayıcı haftalık/günlük kullanım limitine takıldı mı?"""
+    return bool(_LIMIT_IZI.search(metin or ""))
 
 
 _ARA = object()
