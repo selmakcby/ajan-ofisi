@@ -225,11 +225,12 @@ def opencode_izinleri(ajan):
     bash = sorted(a for a in izinli if a == "Bash" or a.startswith("Bash("))
     if not bash:
         bash_kural = "deny"
-    elif ortak.SUNUCU:
-        # sunucuda serbest Bash yok: ortak.SUNUCU_BASH = yalnız ls
-        bash_kural = {"ls": "allow", "ls *": "allow", "*": "deny"}
     else:
-        bash_kural = "allow"
+        # Serbest geliştirme Bash'i (kullanıcı kararı): git clone/fetch/pull/npm/python vb. serbest.
+        # Yıkıcı komutlar (rm, push, reset --hard, sudo, curl, env) açıkça deny.
+        bash_kural = {"*": "allow", **ortak.OPENCODE_BASH_YASAK}
+        if ortak.SUNUCU:
+            bash_kural.update({"cat /proc/*": "deny", "ls /proc/*": "deny"})
     read_kural = {"*": "allow", "**/.env": "deny", "**/.env.*": "deny", "**/secret*": "deny", "**/*secret*": "deny"}
     if ortak.SUNUCU:
         read_kural["**/proc/**"] = "deny"

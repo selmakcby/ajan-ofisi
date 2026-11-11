@@ -64,10 +64,23 @@ class YapilandirmaHatasi(Exception):
     pass
 
 
-VARSAYILAN_YASAK = ["Read(**/.env)", "Read(**/.env.*)", "Read(~/.env)", "Bash(rm:*)", "Bash(git push:*)",
-                    "Bash(curl:*)", "Bash(open:*)",
-                    # proje takip yalnız CEO (sunucu süreci) ve kullanıcı içindir
-                    "Read(**/projeler.json)", "Read(**/toplantilar.json)"]
+VARSAYILAN_YASAK = [
+    "Read(**/.env)", "Read(**/.env.*)", "Read(~/.env)",
+    # yıkıcı / geri alınamaz komutlar (git clone/fetch/pull serbest, push ve reset yasak)
+    "Bash(rm:*)", "Bash(git push:*)", "Bash(git reset --hard:*)", "Bash(git clean:*)",
+    "Bash(git filter-branch:*)", "Bash(sudo:*)", "Bash(curl:*)", "Bash(open:*)",
+    # proje takip yalnız CEO (sunucu süreci) ve kullanıcı içindir
+    "Read(**/projeler.json)", "Read(**/toplantilar.json)",
+]
+
+# opencode için aynı yasakların bash kalıpları (opencode --disallowedTools bilmez, permission ister)
+OPENCODE_BASH_YASAK = {
+    "rm *": "deny", "rm": "deny",
+    "git push*": "deny", "git reset --hard*": "deny", "git clean*": "deny",
+    "git filter-branch*": "deny", "sudo *": "deny", "sudo": "deny",
+    "curl *": "deny", "open *": "deny",
+    "env": "deny", "env *": "deny", "printenv*": "deny",
+}
 
 
 def veri_kacis(metin):

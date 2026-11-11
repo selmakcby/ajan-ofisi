@@ -1496,6 +1496,19 @@ def test_sunucu_araclari():
     assert "Bash(rm:*)" in y and "Bash(git push:*)" in y and "Read(**/.env)" in y
 
 
+def test_git_izinleri():
+    """git clone/fetch/pull serbest; push/reset --hard/clean yasak (Claude + opencode)."""
+    y = ortak.yasakli_araclar({})
+    assert "Bash(git push:*)" in y and "Bash(git reset --hard:*)" in y and "Bash(git clean:*)" in y
+    assert "Bash(git clone:*)" not in y and "Bash(git fetch:*)" not in y and "Bash(git pull:*)" not in y
+    import kosucu
+    iz = kosucu.opencode_izinleri({"izinli_araclar": ["Read", "Bash"]})
+    b = iz["bash"]
+    assert b["*"] == "allow" and b["git push*"] == "deny" and b["git clone*"] if "git clone*" in b else True
+    assert "git clone" not in " ".join(k for k, v in b.items() if v == "deny")
+    assert b["rm *"] == "deny" and b["sudo *"] == "deny"
+
+
 def test_sunucu_yasaklari():
     assert not set(ortak.SUNUCU_YASAK) & set(ortak.yasakli_araclar({}))
     with _SunucuModu():
