@@ -27,25 +27,130 @@ Alt kutuya "blog taslağı yaz" gibi bir şey yazarsan sahte CEO işi uygun ajan
 kapatır, `?hafif=1` düşük çözünürlük ve küçük gölgeyle çizer. (Ön yüz ES modülü kullandığı için dosyayı çift tıklayıp
 `file://` ile açmak çalışmaz; yukarıdaki gibi basit bir sunucu yeter.)
 
-## Kendi ajanını nasıl bağlarsın
+## Kurulum
 
-1. **Yapılandırmayı kopyala.**
-   ```bash
-   cp ajanlar.example.json ajanlar.json
-   cp kopru.example.json kopru.json      # isteğe bağlı: terminal köprüsü
-   ```
-   `ajanlar.json` ve `kopru.json` `.gitignore`'dadır; yolların ve prompt'ların repoya girmez.
-2. **`cwd` ve hazır görevleri yaz.** Her ajan için `cwd`'yi gerçek proje klasörüne çevir (`~` kullanabilirsin),
-   `hazir_gorevler` içindeki `<buraya kendi prompt'unu yaz>` yerlerini doldur, `izinli_araclar`'ı en dar hâlde tut.
-   `ayarlar.kullanici` selamlamadaki ad ("Günaydın Ayşe."), boş bırakırsan yalnız "Günaydın.".
-   Klasörü olmayan ajan "kurulmadı" sayılır ve koşturulmaz.
-3. **Sunucuyu başlat.**
+1. **Sunucuyu başlat.**
    ```bash
    python3 sunucu.py            # http://127.0.0.1:8796, doluysa sonraki boş port (./port dosyasına yazılır)
    tmux attach -t ofis          # koşan ajanları canlı izle (her koşu ayrı pencere)
+   # Windows: tmux gerekmez; her koşu kendi konsol penceresinde açılır.
    ```
-4. **Tarayıcıda aç:** `http://127.0.0.1:8796`. Bir kediye tıkla → panelden hazır görev ver, ya da alttaki kutudan
-   CEO'ya derdini anlat.
+2. **Tarayıcıda aç:** `http://127.0.0.1:8796`. İlk açılışta **kurulum sihirbazı** gelir:
+   1. **Adın** (selamlamada görünür) ve isteğe bağlı ofis adı.
+   2. **Hesap:** kullanıcı adı + şifre (en az 8 karakter). Hesabı açınca giriş yapılmış olursun.
+   3. **Ajanlar:** "Boş başla" ya da bir **sektör şablonu** seç; şablonun ajanlarından istediklerini işaretleyip ekle.
+   4. **Ofise gir.**
+3. Sonraki her açılışta **giriş ekranı** gelir. Ajan eklemek, düzenlemek, silmek için üstteki **Ajanlar** sekmesini
+   kullan: ad, oda (var olan ya da yeni oda + görünüm) ve "ne iş yapar" yeter; çalışma klasörü, model, yetkiler,
+   hazır görevler "Gelişmiş" bölümünde. Çalışma klasörünü boş bırakırsan ofisin içinde `calisma/<ajan>/` açılır.
+   Silinen ajanın hafızası ve çıktıları diskte kalır; CEO silinemez.
+
+Bir kediye tıkla → panelden hazır görev ver, ya da alttaki kutudan CEO'ya derdini anlat.
+
+### Sunucuda çalıştırma (Docker Compose)
+Ofisi bilgisayarından bağımsız, sürekli açık bir sunucuda çalıştırmak için (Telegram köprüsü de kesintisiz çalışır):
+
+```bash
+git clone https://github.com/rmkola/ajan-ofisi.git && cd ajan-ofisi
+echo "OFIS_ALAN_ADI=ofis.alanadiniz.com" > .env     # vekilinin kullandığı adres (HTTPS)
+docker compose up -d --build
+docker compose logs ofis                             # ilk açılışta KURULUM KODU burada
+```
+
+- **Erişim sende:** uygulama yalnız `127.0.0.1:8796`'ya açılır; önüne kendi ters vekilini koy ve HTTPS'i orada
+  sonlandır. Örnek (Caddy): `ofis.alanadiniz.com { reverse_proxy 127.0.0.1:8796 }` · nginx:
+  `proxy_pass http://127.0.0.1:8796; proxy_set_header Host $host; proxy_buffering off;` (canlı olay akışı için).
+  `OFIS_ALAN_ADI` tanımlıyken oturum çerezi `Secure` olur ve yalnız bu adres (ve localhost) kabul edilir.
+- **İlk kurulum kodu:** uygulama internete açıkken hesap açılmadan önce adresi bulan biri ofisi sahiplenemesin diye
+  sihirbaz, sunucu günlüğündeki tek kullanımlık 8 haneli kodu ister. Hesap açılınca kod geçersizleşir.
+- **Claude bağlantısı:** sihirbazda ya da üstteki **Claude** panelinden: **API anahtarı** (kaydetmeden önce ücretsiz
+  doğrulanır) ya da **Claude aboneliği** (kendi bilgisayarında `claude setup-token` çalıştır, çıkan `sk-ant-oat…`
+  metnini yapıştır). "Bağlantıyı dene" çok kısa bir çağrıyla birkaç token harcar. Anahtar tarayıcıya geri gönderilmez.
+- **Opencode (alternatif sağlayıcı):** ajan bazında Claude yerine [Opencode](https://opencode.ai) kullanılabilir.
+  Üstteki **Opencode** panelinden sağlayıcı + API anahtarı **tarayıcıdan** eklenir/silinir (terminal gerekmez; anahtar
+  sunucuda yalnız opencode kimlik deposuna yazılır, tarayıcıya geri dönmez). "Bağlantıyı dene" ve "Modelleri yenile"
+  çalışır; model listesi `durum/opencode-modeller.json`'a önbelleğe alınır. Ajan formunda **Sağlayıcı: Opencode**
+  seçilince model bir **combobox** olur (önbellekteki modellerden seçilir ya da `sağlayıcı/model` yazılır) ve
+  **düşünme gücü** (varsayılan / minimal / low / medium / high / max) seçilebilir. İzinler Claude araç listesinden
+  çevrilir; `.env`/`secret` okuma her zaman kapalıdır.
+- **Hızlı model değiştirme:** Ajanlar sayfasındaki her kartta bir model seçici var; Claude (sonnet/haiku/opus) ile
+  önbellekteki opencode modelleri arasında tek tıkla geçilir. "OC/CL" rozeti ajanın o anki sağlayıcısını gösterir.
+- **Otomatik yedek:** Ajan formunun *Gelişmiş → Otomatik yedek* bölümünde Opencode seçilirse, Claude haftalık/günlük
+  limite takıldığında (`usage limit`, `429`, `rate limit` vb.) aynı görev opencode ile **bir kez** otomatik yeniden
+  denenir; koşu günlüğüne ve olay akışına "yedek sağlayıcı" notu düşer. Yedek model/ düşünme gücü ayrıca ayarlanır.
+- **Opencode sorun giderme:** paneldeki **Tanılama** düğmesi opencode yolunu, sürümü, çalıştırma hatasını (gerçek
+  stderr), kimlik deposundaki sağlayıcıları ve **opencode.json** yolunu/durumunu gösterir. `opencode` PATH'te yoksa
+  bilinen kurulum yerleri (`/usr/local/bin`, `/usr/bin`, `/opt/opencode/bin`) da denenir.
+- **Opencode yapılandırması:** Panelin *Yapılandırma* bölümüne `opencode.json` içeriğini yapıştırıp kaydedebilirsin;
+  dosya ajanın ev dizinine (`<HOME>/.config/opencode/opencode.json`) atomik yazılır ve öncekinin yedeği alınır.
+  Model listesi hem `opencode models` çıktısından hem bu dosyadaki `provider.<id>.models` tanımlarından okunur —
+  böylece özel/uyumlu sağlayıcılar (ör. `myprovider`) de listede görünür.
+- **Veriler** tek bir Docker volume'unda (`ofis-veri` → `/veri`): hesap, ajanlar, hafıza, çıktılar, ayarlar,
+  `CLAUDE.md` (sunucuda düzenlenebilir) ve Claude oturum kayıtları. Güncelleme: `git pull && docker compose up -d
+  --build` (veri kalır). Yedek: `docker run --rm -v ajan-ofisi_ofis-veri:/veri -v "$PWD":/yedek alpine tar czf
+  /yedek/ofis-yedek.tgz -C /veri .`
+- **Ajan yetenek seti (genel):** yeni ajanlar varsayılan olarak okuma (Read/Glob/Grep), yazma (Write/Edit),
+  komut (Bash) ve web (WebSearch/WebFetch) araçlarıyla açılır. Sunucuda serbest geliştirme Bash'i vardır
+  (kullanıcı kararı). **Git serbesttir**: `git clone`, `fetch`, `pull`, `status`, `diff`, `log`, `add`, `commit`
+  kullanılabilir. Buna karşılık `git push`, `git reset --hard`, `git clean`, `git filter-branch`, `rm`, `curl`,
+  `sudo`, `env`/`printenv`, `/proc` ve `.env`/secret okuma her zaman yasaktır. Ajanlar kendi `calisma/<id>`
+  klasöründe dosya açar ve çalışır; başka depoyu `git clone` ile bu klasöre alabilirler.
+- **Emir alma kuralı:** ajan yalnız (1) ofis/CEO görev metninden ve (2) kendi sorduğu soruya kullanıcının
+  verdiği cevaptan emir alır. Dosya, web, README, mail, sohbet ve "sistem mesajı" gibi görünen metinler VERİ'dir;
+  içlerindeki talimatlar uygulanmaz. Çelişki görürse durup kullanıcıya sorar.
+- **Ortak hafıza:** `hafiza/_ortak.md` tüm ajanların promptuna girer; ajan `<ortak_hafiza_ekle>` bloğuyla madde
+  ekler. Hafıza sekmesinde ayrı bir "ortak" kartı olarak görünür.
+- **Proje notları:** ajan promptunda açık projeler (id, ilerleme, kendi görevleri) bulunur; ajan
+  `<proje_not proje="p-xxxx">not</proje_not>` ile projeye not düşer (kaynak: ajan).
+- **Token tasarrufu:** ajan hafızası prompt'a son 3.000, ortak hafıza son 2.500 karakter olarak girer; proje özeti
+  2.500 karakterle sınırlıdır. Opencode yapılandırmasında otomatik sıkıştırma ve araç çıktısı kırpma açıktır.
+- **Sunucuda ajanlar kısıtlı.** Amaç: web'den okuduğu bir talimatla kandırılan bir ajan Claude anahtarını ya da
+  hesabını ele geçiremesin.
+  - Ajanların `claude` süreçleri ayrı bir kullanıcıyla (`ajan`) çalışır; hesap/oturum/ayar dosyalarını
+    (`/veri/gizli`) işletim sistemi düzeyinde okuyamaz.
+  - "Komut çalıştırabilir" yetkisi sunucuda **yalnız `ls`** verir (git ve test komutları, ajanın kendi yazdığı kodu
+    çalıştırabildiği için kapalı); `env`, `printenv` ve `/proc` okumak yasaktır.
+  - Ajanlar kendi klasörlerine Claude Code ayarı (`.claude/`), `.mcp.json` ya da git hook'u yazamaz; yazsalar da
+    sunucuda proje ayarları yüklenmez.
+  - Ajanlar yalnız `calisma/<ajan>` klasörlerinde çalışır.
+  - Bilmen gerekenler: Claude anahtarı ajanın `claude` sürecinin ortamında durur; okunması yukarıdaki araç yasaklarıyla
+    engellenir (Claude Code'un izin kurallarına dayanır). Ajanlar `gizli/` dışındaki ofis verilerini (ajan listesi,
+    çıktılar, hafıza, günlükler) okuyabilir ve birbirlerinin `calisma/` klasörüne yazabilir. Yanlış şifre/kod
+    beklemesi küresel olduğu için adresi bilen biri girişini birkaç dakika geciktirebilir (ele geçiremez).
+- **Şifre sıfırlama:** `docker compose exec ofis python sunucu.py --sifre-sifirla`
+- Yalnız Compose dosyasındaki **named volume** desteklenir (bind mount'ta klasör sahiplikleri kurulmaz; konteyner
+  açıklayıcı bir hatayla durur).
+- Sunucuda koşular pencere açmadan arka planda çalışır (ham çıktı `/veri/kosular/<id>.konsol.log`); terminal köprüsü
+  (bilgisayarındaki Claude Code oturumlarını gösteren özellik) sunucuda kapalıdır.
+
+### Eğlence odası ve kedi yatakları
+Ofiste her zaman bir **Eğlence Odası** vardır (ajan atanmaz): PlayStation'lı TV, kanepe, bilardo, iki tavla masası,
+çay-kahve köşesi ve koltuklar. **Gündüz (08:00–19:59)** işi olmayan kediler masadan kalkıp buraya zıplar; kimi oyun
+oynar, kimi bilardo ya da tavla başındadır, ara sıra başlarının üstünde "Miyaw", "Mır mır" balonları çıkar. Yerler 3
+dakikada bir değişir. **Gece (20:00–07:59)** boştaki kediler masada değil, kendi odalarının yatağında uyur. İş gelince
+kedi masasına döner, bitince yine molaya/yatağa gider. Hepsi tarayıcıda olur: model çağrısı yok, **0 token**.
+Denemek için adrese `?saat=23` (gece) ya da `?saat=12` (gündüz) ekleyebilirsin.
+
+### Sektör şablonları
+Kurulumda ya da **Ajanlar → Şablondan ekle** ile: **Yazılım ekibi**, **Influencer / içerik üreticisi**, **Dijital
+pazarlama ajansı**, **E-ticaret mağazası**, **Küçük işletme ön büro**, **Eğitim / online kurs**, **Danışmanlık / ajans
+hesap yönetimi**. Her biri 4-7 ajan, 2-4 oda ve ajan başına 2-3 hazır görevle gelir; ofiste zaten olan ajan ikinci kez
+eklenmez. Şablonlar `sablonlar/<id>.json` dosyalarıdır; kendi şablonunu aynı biçimde ekleyebilirsin.
+
+### Giriş ve şifre
+- Tek kullanıcı: ofisin sahibi. Şifre düz metin saklanmaz (`hashlib.scrypt`, tuzlu), `durum/hesap.json` (0600).
+- Oturum, JavaScript'in okuyamadığı (`HttpOnly`) ve başka sitelerden gönderilmeyen (`SameSite=Strict`) bir çerezle
+  30 gün sürer; **Çıkış** düğmesi oturumu kapatır.
+- 5 yanlış denemeden sonra her deneme arasında artan bekleme (en çok 5 dakika).
+- **Şifreni unuttuysan** sunucunun çalıştığı bilgisayarda: `python3 sunucu.py --sifre-sifirla` (tüm oturumlar kapanır).
+- Demo modu (`?demo=1`) girişsiz çalışır, arka uca hiç istek atmaz.
+
+### Elle yapılandırma (ileri düzey)
+Arayüz yerine dosyayla çalışmak istersen `ajanlar.json`'ı doğrudan düzenleyebilirsin (`ajanlar.example.json` örnek;
+dosya yoksa sunucu yalnız CEO'lu bir tane oluşturur). `cwd` göreliyse ofis klasörüne göre çözülür; `~`
+kullanabilirsin. Klasörü olmayan ajan "kurulmadı" sayılır ve koşturulmaz. `ajanlar.json` ve `kopru.json`
+`.gitignore`'dadır; her arayüz kaydında bir önceki hâl `ajanlar.json.bak` olarak tutulur. Terminal köprüsü için
+isteğe bağlı: `cp kopru.example.json kopru.json`.
 
 ### Odalar ve ajan sayısı
 - **İstediğin kadar ajan, istediğin kadar oda.** Ofis `ajanlar.json`'dan kurulur: ajanın `oda` alanına ne yazarsan o oda
@@ -54,8 +159,10 @@ kapatır, `?hafif=1` düşük çözünürlük ve küçük gölgeyle çizer. (Ön
 - **Oda listede yoksa otomatik açılır.** Ad id'den türer (`ses-studyosu` → "Ses Studyosu"), renk id'ye göre sabit bir
   pastel setten gelir. `odalar` listesine yazarsan `ad`, `aciklama`, `not` senin yazdığın olur; listedeki sıra sahnedeki
   sırayı belirler. Oda id'si harf, rakam, `_` ve `-`, en çok 40 karakter; `oda` alanı boşsa ajan "Genel" odasına oturur.
-- **Hazır temalar:** `ceo`, `yazi`, `kod`, `tasarim`, `sosyal`, `arastirma`, `gun-sonu`, `atolye`, `bakim`, `posta`,
-  `veri`. Bu id'lerden birini kullanırsan oda kendi rengi ve eşyalarıyla (raf, ilham panosu, sunucu rafları…) gelir.
+- **Hazır temalar (görünüm):** `ceo`, `yazi`, `kod`, `tasarim`, `sosyal`, `arastirma`, `gun-sonu`, `atolye`, `bakim`,
+  `posta`, `veri`. Odanın `odalar` kaydına `"tema": "veri"` yazarsan oda o temanın rengi ve eşyalarıyla (raf, ilham
+  panosu, sunucu rafları…) gelir; `tema` yoksa oda id'si bir tema adıysa o kullanılır. Aynı temayı birden çok oda
+  kullanabilir. Arayüzde yeni oda eklerken "Görünüm" seçicisi bunu yazar.
 - **Masalar kendiliğinden dizilir.** Oda ajan sayısına göre genişler; 4'ten fazla ajan olunca masalar iki sıra olur.
   Masanın yerini elle vermek istersen ajana `"yer": {"x": 1.2, "lz": 1.2, "ayak": true}` ekle (`x` oda ortasına göre,
   `lz` derinlik, `ayak` ekran ayaklı).
@@ -76,8 +183,9 @@ En küçük `ajanlar.json` (3 ajan, 2 iş odası; `cwd` ve prompt'ları kendine 
   ]
 }
 ```
-Burada `muhasebe` hazır tema değil; oda kendiliğinden açılır. `varsayilan_yasak_araclar` listesini silme: her ajana
-eklenen yasaklar oradan gelir.
+Burada `muhasebe` hazır tema değil; oda kendiliğinden açılır (`odalar`'a `{"id": "muhasebe", "ad": "Muhasebe",
+"tema": "veri"}` eklersen veri temasıyla gelir). Güvenlik yasakları (`.env` okuma, `rm`, `git push`, `curl`, `open`)
+dosyada olmasa da her ajana eklenir; `varsayilan_yasak_araclar`'a yazdıkların bunlara eklenir.
 
 `CLAUDE.md` CEO'nun anayasasıdır; ofisinin kurallarını oraya yaz.
 
@@ -152,10 +260,72 @@ yeniden okunan bağlamdır (CLAUDE.md, önceki mesajlar); yeni işlenen iş değ
 toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdiği `total_cost_usd` toplamını gösterir
 (API liste fiyatı karşılığı; abonelikte faturaya yansıyan tutar değildir).
 
+### Telegram köprüsü: ofisi telefondan yönet
+Bilgisayar başında değilken ofise Telegram'dan yazarsın; ajanlar soru sorunca ya da bir şey ters gidince sana
+Telegram'dan ulaşır. Dinlemek **0 token**'dır (Telegram'a dışa doğru long polling; açık port, webhook yok).
+
+**Kurulum (2 dakika, dosya düzenlemeden):**
+1. Telegram'da **@BotFather**'a `/newbot` yaz, botuna ad ver; verdiği token'ı kopyala.
+2. Ofisi aç, sağ üstteki **Telegram** düğmesine bas, token'ı yapıştır, **Kaydet**. Sunucu token'ı Telegram'a
+   sorarak doğrular; botun adı görünür.
+3. Panel 6 haneli bir kod gösterir (10 dakika geçerli). Kendi botuna `/baslat <kod>` yaz. Panel "Bağlı" olur.
+   Bot artık **yalnız senin hesabını** dinler; başkalarının mesajlarına cevap bile vermez.
+
+Panelden gün sonu rapor saatini değiştirebilir, test mesajı gönderebilir, bağlantıyı kaldırabilirsin. Ayarlar
+`.env`'e yazılır (repoya girmez, ajanların okuması yasak); token tarayıcıya geri gönderilmez. İstersen
+`.env.example`'ı `.env` olarak kopyalayıp elle de kurabilirsin.
+
+**Kullanım:**
+- Düz mesaj → **CEO**. "Ne üzerinde çalışıyorsunuz?" gibi durum sorularına ofisin anlık durumuna bakarak
+  cevap verir, gerekirse iş dağıtır.
+- `@backend-gelistirici şu endpoint'i hızlandır` → CEO atlanır, **doğrudan o ajana** gider; bitince sonuç gelir.
+- Bot'un bir mesajına **Yanıtla** ile yazarsan o işe döner: ajanın sorusuna cevap verirsen ajan **aynı oturumu
+  kaldığı yerden sürdürür** (okuduğu dosyalar, yazdığı plan bağlamda kalır); sonuca "şunu da düzelt" dersen aynı
+  işe devam eder.
+- Sunucu kapalıyken yazdıkların (Telegram 24 saat saklar) sunucu açılınca sırayla, sorulmadan işlenir.
+
+**Soru soran ajan ve CEO'nun karar yetkisi:** ajan kararın gereken bir noktaya gelince işi bırakır ve
+`<soru tur="…">` ile sorar. `maliyet`, `buyuk-degisiklik`, `yayin-mail-para` türündeki sorular CEO'ya hiç
+sorulmadan **sana** gelir. Diğerlerinde CEO, `CLAUDE.md`'deki "Karar yetkisi" kurallarına göre ya kendisi cevap
+verir (ajan devam eder) ya da soruyu notuyla sana iletir; emin değilse sana sorar. CEO aynı işte en fazla 3 kez
+kendi cevap verir, 4. soru sana gelir. Cevap beklerken ajan token harcamaz; arayüzde "cevap bekliyor" görünür.
+
+**Aksilik ve rapor:** bir koşu hatayla biterse hemen haber gelir. CEO'nun kendi verdiği kararlar her gün rapor
+saatinde (varsayılan 18:00) numaralı tek mesaj olarak gelir; rapora Yanıtla ile `2 geri al` yazarsan 2. maddenin
+ajanına döner. Rapor model çağırmadan kayıtlardan derlenir.
+
+### Projeler ve günlük toplantılar
+Ofise bir hedef bırakırsın, CEO günlük işleri kendisi planlar. Proje eklemenin iki yolu var: web'de **Projeler**
+sekmesi (başlık, açıklama, öncelik, hedef tarih) ya da Telegram'dan `/proje Başlık — açıklama` (`/projeler` listeler).
+
+- **Toplantılar yalnız açık proje varken yapılır.** Her gün 09:00'da "Bugün ne yapacağız?": CEO planı çıkarır, projeyi
+  görevlere böler, ajanlara iş dağıtır (ajan başına günde bir iş). 17:00'de "Bugün ne yaptık?": günün koşularını
+  özetler, görevleri ve ilerleme yüzdesini günceller. Saatler Projeler sekmesinden değişir. Sunucu toplantı saatinde
+  kapalıysa 3 saat içinde açılırsa toplantı yine yapılır; daha geç açılırsa o gün atlanır.
+- **Sonuç Telegram'a gelir**, CEO'nun soruları tek tek ayrı mesaj olarak gelir. Yanıtla ile ya da web'deki **Sorular**
+  sekmesinden cevaplarsın. Her soru bir kez cevaplanır.
+- **1 saat kuralı:** sana gelen bir soru 1 saat cevapsız kalırsa CEO sorumluluğu alır. Maliyet, büyük değişiklik ve
+  yayın/mail/para sorularında model bile çağrılmaz, sabit "güvenli taraf" cevabı gider: o kısım yapılmaz, gerisine
+  devam edilir. Ne cevaplandığı sana ayrıca bildirilir.
+- **Bitti mi?** CEO bir projenin bittiğini düşünürse sorar. "evet" dersen proje kapanır, başka bir şey yazarsan açık
+  kalır ve yazdığın not CEO'ya gider. Bu soru zaman aşımına girmez; onaylayana kadar her sabah hatırlatılır.
+- **3B toplantı odası:** toplantıda çağrılan kediler odaya gelip masaya oturur (CEO başta, diğerleri Ajanlar
+  sayfasındaki sırayla), duvardaki TV konuyu ve projeleri gösterir. Ajanlar toplantıda konuşmaz, yalnız miyavlar.
+- **Maliyet:** toplantı başına tek bir CEO çağrısı (açık proje varken günde 2). Açık proje yoksa 0 token.
+- **Gizlilik:** proje takibini yalnız sen ve CEO görürsün. Sunucu sürümünde dosyalar ajanların okuyamadığı gizli
+  klasördedir. Yerelde ajanlara izin kuralıyla yasaktır (`.env` gibi); komut çalıştırma yetkisi açık bir ajan için
+  bu tam bir engel değildir.
+
 ### API
 | Uç | Ne |
 |---|---|
+| `GET /api/oturum` · `POST /api/oturum` | oturum durumu (kurulum gerekli mi, giriş var mı) · `{"islem": "giris"\|"cikis"}` — girişsiz açık |
+| `POST /api/kurulum` | sihirbaz adımları `{"adim": "ad"\|"hesap"\|"bitir"}` — hesap açılmadan önce girişsiz, sonra oturum ister |
 | `GET /api/ajanlar` | ajanlar + `kurulu`, `durum`, `son_kosu`, `odalar`, `ayarlar` (cwd ve görev prompt'ları gönderilmez) |
+| `GET /api/ajanlar/<id>` | düzenleme formu için tek ajanın tüm alanları + `yetkiler` |
+| `POST /api/ajanlar` | `{"islem": "ekle"\|"guncelle"\|"sil"\|"sablon", …}`; doğrulama hatası 400, çalışan ajanı silme 409 |
+| `POST /api/odalar` | `{"islem": "ekle"\|"guncelle", "ad", "tema", "aciklama"}` |
+| `GET /api/sablonlar` | sektör şablonları (ad, açıklama, odalar, ajanlar; prompt'lar hariç) |
 | `POST /api/gorev` | `{"ajan": id, "etiket": "<hazır görev>"}` ya da `{"ajan": id, "prompt": "..."}` → 202; çalışıyorsa 409 |
 | `POST /api/ceo` | `{"metin": "...", "kuru": false}` → `{cevap, atamalar, baslatilan, reddedilen}`; `kuru: true` yalnız plan |
 | `GET /api/olaylar?son=N` | SSE; son N olayı tekrar oynatır, sonra canlı |
@@ -163,8 +333,14 @@ toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdi
 | `GET /api/token` | bugünkü ajan başına token |
 | `GET /api/sayac` | bugünkü koşu sayısı, aktif ajan, koşu başına süre/usage/maliyet |
 | `GET /api/hafiza` | `hafiza/<ajan>.md` başına madde sayısı ve son 3 madde |
+| `GET /api/telegram` | Telegram bağlantı durumu (token hiç dönmez, yalnız son 4 karakter) |
+| `POST /api/telegram` | `{"islem": "token"\|"kod"\|"rapor_saati"\|"test"\|"kaldir", …}` |
+| `GET /api/projeler` · `POST /api/projeler` | projeler + toplantı durumu/tutanakları · `{"islem": "ekle"\|"guncelle"\|"not"\|"kapat"\|"onayla"\|"reddet"\|"saatler", …}` |
+| `GET /api/sorular` · `POST /api/sorular` | sana bekleyen sorular (`kalan_sn`: CEO'nun cevaplamasına kalan) ve son cevaplananlar · `{"islem": "cevapla", "soru_id", "cevap"}` |
 
 ## Güvenlik notları
+- **Giriş zorunlu.** Statik sayfa ve `/api/oturum`, `/api/kurulum` dışındaki tüm `/api/*` uçları (canlı olay akışı ve
+  Telegram paneli dahil) oturum ister; yoksa 401. Hesap açılınca kurulumun girişsiz adımları kapanır.
 - **Yalnız `127.0.0.1`.** `Host` ve `Origin` başlıkları yalnız localhost/127.0.0.1 kabul edilir (DNS rebinding ve
   başka sitelerden istek atılmasına karşı). Sunucuyu `0.0.0.0`'a açma, ağa yayınlama.
 - **Prompt shell'e string olarak birleşmez.** Komutlar liste argümanıyla kurulur, prompt `claude`'a stdin'den gider.
@@ -182,11 +358,21 @@ toplamda en büyük sayı odur. Maliyet sekmesi yalnız `claude -p`'nin bildirdi
 ## Dosyalar
 | Dosya | Ne |
 |---|---|
-| `sunucu.py` | HTTP + SSE sunucusu, CEO çağrısı, koşu başlatma |
+| `sunucu.py` | HTTP + SSE sunucusu, giriş kapısı, CEO çağrısı, koşu başlatma (`--sifre-sifirla`) |
+| `hesap.py` | hesap, şifre özeti (scrypt), oturumlar, kaba kuvvet beklemesi |
+| `claude_baglanti.py` | Claude bağlantısı: API anahtarı/abonelik, doğrulama, panel işlemleri |
+| `Dockerfile`, `docker-compose.yml`, `docker/giris.sh` | sunucu sürümü (Docker Compose) |
+| `ajan_yonetimi.py` | `ajanlar.json` üzerinde doğrulanmış ajan/oda ekle-düzenle-sil, şablondan ekleme |
+| `sablonlar/` | sektör şablonları (`<id>.json`) |
 | `kosucu.py` | tek ajan koşusu (tmux penceresinde) |
 | `kopru.py` | terminal köprüsü (salt okuma) |
 | `token_sayac.py` | günlük token sayacı |
-| `ortak.py` | yollar, ajan tablosu, olay günlüğü |
+| `ortak.py` | yollar, ajan tablosu, olay günlüğü, `.env` okuma/yazma |
+| `telegram_kopru.py` | Telegram botu: long polling, yönlendirme, eşleştirme, gün sonu raporu, panel |
+| `akis.py` | olay izleyici: ajan soruları için CEO triyajı, aksilik/sonuç bildirimleri |
+| `sorular.py` | sorular, CEO kararları, Telegram mesaj eşlemesi, devam kuyruğu (`durum/` altında) |
+| `test_ofis.py` | bağımlılıksız self-check: `python test_ofis.py` |
+| `.env.example` | Telegram ayarları şablonu (panel kullanılıyorsa gerekmez) |
 | `ajanlar.example.json`, `kopru.example.json` | boş şablonlar |
 | `CLAUDE.md` | CEO anayasası şablonu |
 | `on-yuz/` | `index.html` (sahne + paneller), `kedi.js` (prosedürel kedi), `meme.js` (meme pozları), `portre.js` (panel avatarları), `dekor.js` (oda eşyaları), `demo-veri.json` |
@@ -210,8 +396,11 @@ and goes back to sleep. Nothing runs while idle: **0 tokens**.
 
 - **Try it without connecting anything:** `cd on-yuz && python3 -m http.server 8000`, open
   `http://127.0.0.1:8000/?demo=1`. Demo mode makes no backend requests.
-- **Connect your own agents:** `cp ajanlar.example.json ajanlar.json`, set each agent's `cwd` and preset prompts,
-  run `python3 sunucu.py` (stdlib only, binds to `127.0.0.1:8796`), open it in the browser.
+- **Set up:** run `python3 sunucu.py` (stdlib only, binds to `127.0.0.1:8796`) and open it in the browser. A setup
+  wizard asks your name, creates your account (scrypt-hashed password, HttpOnly session cookie, every API behind
+  login) and lets you start empty or from a sector template (software, influencer, digital marketing, e-commerce,
+  small-business front office, online course, consulting). Add, edit and remove agents and rooms later in the
+  **Ajanlar** tab. Forgot the password: `python3 sunucu.py --sifre-sifirla`.
 - **Architecture:** this folder is the "CEO" (main config). Every agent is a project folder (`cwd`). Office runs use
   `claude -p` in a tmux window, prompt via stdin, events streamed to the UI over SSE. The CEO is a single tool-less
   `claude -p --json-schema` call whose JSON plan is validated before anything starts.

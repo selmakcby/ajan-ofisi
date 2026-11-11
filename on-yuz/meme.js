@@ -1,6 +1,6 @@
 // Ajan Ofisi · kedi meme'leri: tıklanan kedi kendi meme pozuna geçer (fotoğraf yok, hepsi prosedürel 3D)
 import * as THREE from 'three';
-import { pozTuret } from './kedi.js';
+import { pozTuret } from './kedi.js?v=3';
 
 const P = (p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1]) => [...p, ...r, ...s];
 const mat = (renk, ek = {}) => new THREE.MeshStandardMaterial({ color:renk, roughness:.7, ...ek });

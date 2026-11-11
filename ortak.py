@@ -1,19 +1,49 @@
 """Ajan Ofisi ortak yardımcıları: yollar, ajan tablosu, olay günlüğü, durum dosyaları."""
-import fcntl
+from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 import os
 import re
+import shutil
+import sys
+import threading
 import time
-from datetime import datetime, timezone
+
+if sys.platform == "win32":
+    import ctypes
+    import msvcrt
+else:
+    import fcntl
 
 KOK = os.path.dirname(os.path.abspath(__file__))
 # Yapılandırma: ajanlar.example.json'ı ajanlar.json olarak kopyala (ajanlar.json .gitignore'da).
-AJANLAR_DOSYASI = os.environ.get("OFIS_AJANLAR", os.path.join(KOK, "ajanlar.json"))
-OLAYLAR = os.path.join(KOK, "olaylar.jsonl")
-DURUM_DIZINI = os.path.join(KOK, "durum")
-KOSU_DIZINI = os.path.join(KOK, "kosular")
-CIKTI_DIZINI = os.path.join(KOK, "cikti")
-HAFIZA_DIZINI = os.path.join(KOK, "hafiza")
+# Veri kökü: sunucuda (Docker) tek volume (OFIS_VERI=/veri); yerelde kod klasörü (bugünkü davranış).
+VERI = os.environ.get("OFIS_VERI") or KOK
+SUNUCU = os.environ.get("OFIS_SUNUCU") == "1"  # sunucu modu: gizli dizin, ajan kısıtları (bkz. sunucu_araclari)
+AJANLAR_DOSYASI = os.environ.get("OFIS_AJANLAR", os.path.join(VERI, "ajanlar.json"))
+OLAYLAR = os.path.join(VERI, "olaylar.jsonl")
+DURUM_DIZINI = os.path.join(VERI, "durum")
+KOSU_DIZINI = os.path.join(VERI, "kosular")
+CIKTI_DIZINI = os.path.join(VERI, "cikti")
+HAFIZA_DIZINI = os.path.join(VERI, "hafiza")
+
+
+def gizli_dizin():
+    """Hesap, oturumlar ve .env: sunucuda ajanların okuyamadığı VERI/gizli (0700); yerelde durum/ (bugünkü)."""
+    return os.path.join(VERI, "gizli") if SUNUCU else DURUM_DIZINI
+
+
+def env_dosyasi():
+    return os.path.join(gizli_dizin(), ".env") if SUNUCU else os.path.join(VERI, ".env")
+
+
+def claude_md_tohumla():
+    """Veri kökü kod klasöründen ayrıysa CEO anayasasını oraya bir kez kopyalar (sunucuda düzenlenebilsin)."""
+    hedef = os.path.join(VERI, "CLAUDE.md")
+    if os.path.normpath(VERI) != os.path.normpath(KOK) and not os.path.exists(hedef):
+        os.makedirs(VERI, exist_ok=True)
+        with open(os.path.join(KOK, "CLAUDE.md"), encoding="utf-8") as f:
+            atomik_yaz(hedef, f.read())
 
 MAKS_GIRDI = 4000
 MAKS_HAFIZA_EKI = 1200
@@ -34,13 +64,172 @@ class YapilandirmaHatasi(Exception):
     pass
 
 
+VARSAYILAN_YASAK = [
+    "Read(**/.env)", "Read(**/.env.*)", "Read(~/.env)",
+    # yıkıcı / geri alınamaz komutlar (git clone/fetch/pull serbest, push ve reset yasak)
+    "Bash(rm:*)", "Bash(git push:*)", "Bash(git reset --hard:*)", "Bash(git clean:*)",
+    "Bash(git filter-branch:*)", "Bash(sudo:*)", "Bash(curl:*)", "Bash(open:*)",
+    # proje takip yalnız CEO (sunucu süreci) ve kullanıcı içindir
+    "Read(**/projeler.json)", "Read(**/toplantilar.json)",
+]
+
+# opencode için aynı yasakların bash kalıpları (opencode --disallowedTools bilmez, permission ister)
+OPENCODE_BASH_YASAK = {
+    "rm *": "deny", "rm": "deny",
+    "git push*": "deny", "git reset --hard*": "deny", "git clean*": "deny",
+    "git filter-branch*": "deny", "sudo *": "deny", "sudo": "deny",
+    "curl *": "deny", "open *": "deny",
+    "env": "deny", "env *": "deny", "printenv*": "deny",
+}
+
+
+def veri_kacis(metin):
+    """Prompt'a VERİ olarak giren metin kendi etiketini kapatamasın (</ofis_durumu> vb.)."""
+    return str(metin).replace("</", "<\\/")
+
+
+def en_kucuk_yapilandirma():
+    """İlk açılışta (ajanlar.json yokken) yazılan yapılandırma: yalnız CEO. Gerisi kurulum sihirbazından gelir."""
+    return {
+        "surum": 2,
+        "ayarlar": {"kullanici": "", "marka": "Ajan Ofisi"},
+        "odalar": [],
+        "varsayilan_yasak_araclar": list(VARSAYILAN_YASAK),
+        "ajanlar": [{
+            "id": "ceo", "ad": "CEO", "oda": "ceo", "cwd": ".", "model": "sonnet", "ne_zaman": "istek",
+            "ne_zaman_metin": "Sen konuşunca",
+            "aciklama": "Yalnız onunla konuşursun; işi ajanlara dağıtır. Araçsız, yalnız plan çıkarır.",
+            "izinli_araclar": [], "hazir_gorevler": [],
+        }],
+    }
+
+
+def yasakli_araclar(veri):
+    """Varsayılan yasaklar her zaman; dosyadakiler onlara eklenir (sıra korunur, tekrar yok). Sunucuda ek yasaklar."""
+    return list(dict.fromkeys([*VARSAYILAN_YASAK, *(veri.get("varsayilan_yasak_araclar") or []),
+                               *(SUNUCU_YASAK if SUNUCU else [])]))
+
+
+# ---------- sunucu modu: kısıtlı ajanlar ----------
+# Serbest Bash yok: kandırılmış bir ajan anahtarı/dosyaları okuyup dışarı sızdıramasın. Kullanıcı kararı: yalnız ls
+# (git/test komutları ajanın kendi yazdığı kodu çalıştırabildiği için kapalı).
+SUNUCU_BASH = ["Bash"]  # serbest gelistirme (kullanici karari); rm/push/curl/env .env yine yasak
+# Claude Code izin kurallarında mutlak yol "//" ile yazılır. /proc: süreç ortamından anahtar okunmasın.
+# .claude/.mcp.json/.git: ajan kendi klasörüne ayar/hook/MCP yazıp kendine yetki veremesin.
+SUNUCU_YASAK = ["Bash(env:*)", "Bash(printenv:*)", "Read(//proc/**)",
+                "Edit(**/.claude/**)", "Edit(**/.mcp.json)", "Edit(**/.git/**)"]
+
+
+def sunucu_araclari(izinli):
+    """Sunucuda araç listesini olduğu gibi bırakır (serbest Bash kullanıcı kararı).
+    Güvenlik yasakları yasakli_araclar() üzerinden ayrıca uygulanır."""
+    return list(dict.fromkeys(izinli or []))
+
+
+def calisma_icinde(cwd):
+    """Gerçek yol (symlink çözülmüş) VERI/calisma altında mı?"""
+    kok = os.path.normcase(os.path.realpath(os.path.join(VERI, "calisma")))
+    return os.path.normcase(os.path.realpath(cwd)).startswith(kok + os.sep)
+
+
+def ajan_klasoru_ac(yol):
+    """Ajanın yazacağı klasör: sunucuda ayrı 'ajan' kullanıcısı da yazabilsin (grup ekip, setgid)."""
+    os.makedirs(yol, exist_ok=True)
+    # symlink ya da başkasının (ajan) açtığı klasör: izin değiştirme (symlink üzerinden ofis klasörü açılmasın)
+    if SUNUCU and not os.path.islink(yol) and (not hasattr(os, "getuid") or os.stat(yol).st_uid == os.getuid()):
+        os.chmod(yol, 0o2770)
+
+
+def eski_kosulari_temizle():
+    """Sunucu (konteyner) yeniden başladıysa yarıda kalan koşular ölüdür; pid'ler yeniden kullanıldığı için
+    'çalışıyor' kaydı ajanı sonsuza dek meşgul gösterebilir. Yerelde dokunulmaz (konsol pencereleri sürer)."""
+    if not SUNUCU or not os.path.isdir(DURUM_DIZINI):
+        return
+    for ad in os.listdir(DURUM_DIZINI):
+        if not ad.endswith(".json") or not AJAN_ID_DESENI.match(ad[:-5]):
+            continue
+        d = durum_oku(ad[:-5])
+        if d and d.get("durum") in ("calisiyor", "basliyor"):
+            durum_yaz(ad[:-5], {**d, "durum": "hata", "pid": None, "hata": "sunucu yeniden başladı; koşu yarıda kaldı"})
+
+
+ORTAK_HAFIZA_DOSYASI = os.path.join(HAFIZA_DIZINI, "_ortak.md")
+
+
+MAKS_ORTAK_HAFIZA_PROMPT = 2500  # token tasarrufu: son kısım yeter
+
+
+def ortak_hafiza_oku():
+    try:
+        with open(ORTAK_HAFIZA_DOSYASI, encoding="utf-8") as f:
+            metin = f.read().strip()
+    except FileNotFoundError:
+        return "(önceki madde yok)"
+    if not metin:
+        return "(önceki madde yok)"
+    if len(metin) > MAKS_ORTAK_HAFIZA_PROMPT:
+        metin = "…" + metin[-MAKS_ORTAK_HAFIZA_PROMPT:]
+    return metin
+
+
+def ortak_hafiza_ekle(maddeler):
+    """Tarihli maddeleri ortak hafızaya ekler (süreçler arası kilitli)."""
+    if not maddeler:
+        return []
+    os.makedirs(HAFIZA_DIZINI, exist_ok=True)
+    with open(ORTAK_HAFIZA_DOSYASI, "a", encoding="utf-8") as f:
+        with dosya_kilidi(f):
+            for m in maddeler:
+                f.write(f"\n- [{bugun()}] {str(m)[:MAKS_HAFIZA_EKI]}")
+            f.flush()
+    return maddeler
+
+
+BAGLANTI_HATASI = "Claude bağlantısı kurulmadı ya da geçersiz: üstteki Claude panelinden bağla."
+_BAGLANTI_IZI = re.compile(r"not logged in|/login|invalid api key|api key|oauth token|authentication", re.I)
+LIMIT_HATASI = ("Claude kullanım limitine takıldı (haftalık/günlük). Bir süre sonra dene ya da ajan formunda "
+                "Otomatik yedek olarak Opencode tanımla.")
+_LIMIT_IZI = re.compile(
+    r"weekly limit|usage limit|rate limit|limit reached|too many requests|quota|credit balance|insufficient",
+    re.I)
+
+
+def baglanti_hatasi_mi(metin):
+    """claude'un "giriş yok / anahtar geçersiz" cevabı mı? (kullanıcıya anlaşılır mesaj gösterilir)"""
+    return bool(_BAGLANTI_IZI.search(metin or ""))
+
+
+def limit_hatasi_mi(metin):
+    """Sağlayıcı haftalık/günlük kullanım limitine takıldı mı?"""
+    return bool(_LIMIT_IZI.search(metin or ""))
+
+
+_ARA = object()
+
+
+def kosu_modu(platform=None, tmux_yolu=_ARA):
+    """Ajan koşusu nasıl açılır: Windows → konsol penceresi, tmux varsa → tmux, yoksa (Docker) → arka plan."""
+    if (platform or sys.platform) == "win32":
+        return "konsol"
+    tmux = shutil.which("tmux") if tmux_yolu is _ARA else tmux_yolu
+    return "tmux" if tmux else "arka"
+
+
+def cwd_coz(cwd):
+    """Göreli çalışma klasörü ofis klasörüne (KOK) göre çözülür; boş kalır (kurulmamış)."""
+    if not cwd:
+        return ""
+    yol = os.path.expanduser(cwd)
+    return os.path.normpath(yol if os.path.isabs(yol) else os.path.join(VERI, yol))
+
+
 def ajanlari_yukle():
     try:
         with open(AJANLAR_DOSYASI, encoding="utf-8") as f:
             veri = json.load(f)
-    except FileNotFoundError as e:
-        raise YapilandirmaHatasi(
-            f"{os.path.basename(AJANLAR_DOSYASI)} yok. Önce: cp ajanlar.example.json ajanlar.json") from e
+    except FileNotFoundError:
+        veri = en_kucuk_yapilandirma()
+        atomik_yaz(AJANLAR_DOSYASI, json.dumps(veri, ensure_ascii=False, indent=2))
     if not isinstance(veri, dict) or not isinstance(veri.get("ajanlar"), list):
         raise YapilandirmaHatasi("ajanlar.json içinde 'ajanlar' listesi olmalı")
     tablo = {}
@@ -50,27 +239,56 @@ def ajanlari_yukle():
         oda = ajan.get("oda") or "genel"
         if not isinstance(oda, str) or not ODA_ID_DESENI.fullmatch(oda):
             raise ValueError(f"geçersiz oda id: {oda!r} (ajan {ajan['id']})")
-        kurulu = os.path.isdir(os.path.expanduser(ajan.get("cwd") or ""))
-        tablo[ajan["id"]] = {**ajan, "oda": oda, "cwd": os.path.expanduser(ajan.get("cwd") or ""), "kurulu": kurulu}
+        cwd = cwd_coz(ajan.get("cwd"))
+        tablo[ajan["id"]] = {
+            **ajan,
+            "oda": oda,
+            "cwd": cwd,
+            # sunucuda ajan yalnız VERI/calisma altında çalışır (CEO araçsız, hariç)
+            "kurulu": bool(cwd) and os.path.isdir(cwd) and (not SUNUCU or ajan["id"] == "ceo" or calisma_icinde(cwd)),
+        }
     return veri, tablo
 
 
 def ayarlar(veri):
     """Arayüz ayarları: kullanıcı adı (selamlama) ve marka. İkisi de isteğe bağlı."""
     a = veri.get("ayarlar") if isinstance(veri.get("ayarlar"), dict) else {}
-    return {"kullanici": str(a.get("kullanici") or "")[:40], "marka": str(a.get("marka") or "Ajan Ofisi")[:40]}
+    return {
+        "kullanici": str(a.get("kullanici") or "")[:40],
+        "marka": str(a.get("marka") or "Ajan Ofisi")[:40],
+    }
+
+
+@contextmanager
+def dosya_kilidi(f):
+    """Platform bağımsız dosya kilitleme bağlam yöneticisi."""
+    fd = f.fileno()
+    if sys.platform == "win32":
+        # Windows: Dosyanın başından 1 baytlık alanı kilitler
+        f.seek(0)
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        f.seek(0, os.SEEK_END)
+        try:
+            yield
+        finally:
+            f.seek(0)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            f.seek(0, os.SEEK_END)
+    else:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def olay_yaz(olay):
     """olaylar.jsonl'e tek satır ekler (süreçler arası kilitli)."""
     satir = json.dumps({"zaman": simdi_iso(), **olay}, ensure_ascii=False)
     with open(OLAYLAR, "a", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
+        with dosya_kilidi(f):
             f.write(satir + "\n")
             f.flush()
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def durum_yolu(ajan_id):
@@ -85,23 +303,80 @@ def durum_oku(ajan_id):
         return None
 
 
-def durum_yaz(ajan_id, durum):
-    gecici = durum_yolu(ajan_id) + ".tmp"
+def atomik_yaz(yol, metin, izin=None):
+    """Geçici dosyaya yazıp yerine koyar. Windows'ta hedef başka bir iş parçacığı/süreçte açıkken os.replace
+    PermissionError verir: kısa aralıklarla yeniden denenir. Geçici ad süreç/iş parçacığına özgüdür."""
+    gecici = f"{yol}.{os.getpid()}.{threading.get_ident()}.tmp"
     with open(gecici, "w", encoding="utf-8") as f:
-        json.dump(durum, f, ensure_ascii=False, indent=1)
-    os.replace(gecici, durum_yolu(ajan_id))
+        f.write(metin)
+    if izin is not None:
+        os.chmod(gecici, izin)
+    for deneme in range(20):
+        try:
+            os.replace(gecici, yol)
+            return
+        except PermissionError:
+            if deneme == 19:
+                try:
+                    os.remove(gecici)
+                finally:
+                    raise
+            time.sleep(0.05)
+
+
+def durum_yaz(ajan_id, durum):
+    atomik_yaz(durum_yolu(ajan_id), json.dumps(durum, ensure_ascii=False, indent=1))
 
 
 def surec_yasiyor(pid):
+    """Verilen PID'ye sahip sürecin çalışıp çalışmadığını platforma uygun kontrol eder."""
     if not pid:
         return False
     try:
-        os.kill(int(pid), 0)
-        return True
-    except (ProcessLookupError, ValueError):
+        pid = int(pid)
+    except ValueError:
         return False
-    except PermissionError:
-        return True
+
+    if sys.platform == "win32":
+        # Windows'ta os.kill(pid, 0) süreci SONLANDIRIR; bu yüzden yalnız sorgu yapan
+        # OpenProcess + GetExitCodeProcess kullanılır (bkz. GitHub issue #3).
+        from ctypes import wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        SYNCHRONIZE = 0x00100000
+        STILL_ACTIVE = 259
+        ERROR_ACCESS_DENIED = 5
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+        handle = kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid
+        )
+        if not handle:
+            # ERROR_ACCESS_DENIED: süreç var ama sorguya izin yok (yükseltilmiş süreçler)
+            return ctypes.get_last_error() == ERROR_ACCESS_DENIED
+
+        try:
+            exit_code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return exit_code.value == STILL_ACTIVE
+            return False
+        finally:
+            kernel32.CloseHandle(handle)
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, ValueError):
+            return False
+        except PermissionError:
+            return True
 
 
 def ajan_mesgul(ajan_id):
@@ -111,5 +386,88 @@ def ajan_mesgul(ajan_id):
         return False
     if surec_yasiyor(d.get("pid")):
         return True
-    # tmux penceresi açılırken pid henüz yazılmamış olabilir
     return d.get("durum") == "basliyor" and time.time() - d.get("baslangic_ts", 0) < 30
+
+
+# ---------- .env ve Telegram ayarı ----------
+# .env repoya girmez (.gitignore) ve ajanların okuması varsayilan_yasak_araclar ile yasaktır.
+ENV_SATIRI = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$")
+SAAT_DESENI = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+ENV_IZIN = 0o600  # .env yalnız sahibi okuyabilsin (paylaşılan Linux/macOS makineleri)
+
+
+SIR_ONEKLERI = ("OFIS_TELEGRAM_", "OFIS_CLAUDE_", "OFIS_OPENCODE_")
+
+
+def kosucu_ortami():
+    """kosucu.py süreci: veri kökü gibi ayarlar kalır, sırlar (Telegram, Claude) çıkar."""
+    return {k: v for k, v in os.environ.items() if not k.startswith(SIR_ONEKLERI)}
+
+
+def alt_surec_ortami(env_yolu=None):
+    """claude süreçleri: ofis ayarları çıkar; Claude bağlantısı (.env) varsa ilgili değişkenle verilir."""
+    o = {k: v for k, v in os.environ.items() if not k.startswith("OFIS_")}
+    env = env_oku(env_yolu)
+    if env.get("OFIS_CLAUDE_API_KEY"):
+        o["ANTHROPIC_API_KEY"] = env["OFIS_CLAUDE_API_KEY"]; o.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+    elif env.get("OFIS_CLAUDE_TOKEN"):
+        o["CLAUDE_CODE_OAUTH_TOKEN"] = env["OFIS_CLAUDE_TOKEN"]; o.pop("ANTHROPIC_API_KEY", None)
+    return o
+
+
+def env_oku(yol=None):
+    """ANAHTAR=deger satırlarını okur; # ve boş satırlar atlanır, tırnaklar soyulur. Dosya yoksa {}."""
+    try:
+        with open(yol or env_dosyasi(), encoding="utf-8") as f:
+            satirlar = f.read().splitlines()
+    except FileNotFoundError:
+        return {}
+    sonuc = {}
+    for satir in satirlar:
+        e = ENV_SATIRI.match(satir)
+        if not e or satir.lstrip().startswith("#"):
+            continue
+        deger = e.group(2).strip()
+        if len(deger) >= 2 and deger[0] == deger[-1] and deger[0] in "\"'":
+            deger = deger[1:-1]
+        sonuc[e.group(1)] = deger
+    return sonuc
+
+
+def env_yaz(guncel, yol=None):
+    """Verilen anahtarları günceller (yoksa sona ekler), None olanları siler; diğer satırlar aynen kalır."""
+    yol = yol or env_dosyasi()
+    os.makedirs(os.path.dirname(yol), exist_ok=True)
+    try:
+        with open(yol, encoding="utf-8") as f:
+            satirlar = f.read().splitlines()
+    except FileNotFoundError:
+        satirlar = []
+    kalan = dict(guncel)
+    yeni = []
+    for satir in satirlar:
+        e = ENV_SATIRI.match(satir)
+        if e and not satir.lstrip().startswith("#") and e.group(1) in guncel:
+            deger = kalan.pop(e.group(1), None)
+            if deger is not None:
+                yeni.append(f"{e.group(1)}={deger}")
+            continue  # silinen ya da aynı anahtarın tekrarı
+        yeni.append(satir)
+    yeni += [f"{k}={v}" for k, v in kalan.items() if v is not None]
+    atomik_yaz(yol, "\n".join(yeni) + "\n", ENV_IZIN)
+
+
+def telegram_ayari(yol=None):
+    """{"token", "kullanici": int|None, "rapor_saati": (saat, dakika)}; token yoksa None. Ortam değişkeni .env'i ezer."""
+    env = env_oku(yol)
+    al = lambda k: (os.environ.get(k) or env.get(k) or "").strip()  # noqa: E731
+    token = al("OFIS_TELEGRAM_TOKEN")
+    if not token:
+        return None
+    kullanici = al("OFIS_TELEGRAM_KULLANICI")
+    saat = SAAT_DESENI.match(al("OFIS_TELEGRAM_RAPOR_SAATI"))
+    return {
+        "token": token,
+        "kullanici": int(kullanici) if kullanici.isdigit() else None,
+        "rapor_saati": (int(saat.group(1)), int(saat.group(2))) if saat else (18, 0),
+    }

@@ -6,7 +6,7 @@
     "marka": "Ajan Ofisi"
   },
   "odalar": [
-    { "id": "yazi", "ad": "Yazı Odası", "aciklama": "Blog yazıları ve taslaklar." },
+    { "id": "yazi", "ad": "Yazı Odası", "tema": "yazi", "aciklama": "Blog yazıları ve taslaklar." },
     { "id": "kod", "ad": "Kod Odası", "aciklama": "Kod inceleme ve test." },
     { "id": "arastirma", "ad": "Araştırma", "aciklama": "Kaynaklı kısa araştırmalar." }
   ],

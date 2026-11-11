@@ -24,7 +24,7 @@ import token_sayac
 EV = os.path.expanduser("~")
 OTURUM_DIZINI = os.path.join(EV, ".claude", "sessions")
 PROJE_DIZINI = os.path.join(EV, ".claude", "projects")
-ESLEME_DOSYASI = os.environ.get("OFIS_KOPRU", os.path.join(ortak.KOK, "kopru.json"))
+ESLEME_DOSYASI = os.environ.get("OFIS_KOPRU", os.path.join(ortak.VERI, "kopru.json"))
 ARALIK_SN = 2.0
 CALISIYOR_SN = 20
 MAKS_OKUMA = 2_000_000          # tek turda transkriptten okunacak en fazla bayt
